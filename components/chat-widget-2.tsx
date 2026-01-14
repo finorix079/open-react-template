@@ -529,7 +529,7 @@ export default function ChatWidget2() {
               </div>
             )}
             {messages.map((msg, index) => (
-              <div key={index} className={`message ${msg.role === 'user' ? 'user' : 'agent'}`}>
+              <div key={index} className={`message ${msg.role === 'user' ? 'user' : 'assistant'}`}>
                 <div className="message-content-wrapper">
                   <div className="message-content">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -583,7 +583,7 @@ export default function ChatWidget2() {
 
             {/* Loading animation */}
             {isLoading && (
-              <div className="message agent">
+              <div className="message assistant">
                 <div className="message-content-wrapper">
                   <div className="flex space-x-2">
                     <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: '0ms' }}></div>
