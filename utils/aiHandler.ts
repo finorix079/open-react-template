@@ -1,5 +1,14 @@
 import OpenAI from 'openai';
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { observeOpenAI } from "@elasticdash/openai";
+import { LangfuseSpanProcessor } from "@elasticdash/otel";
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+
+const sdk = new NodeSDK({
+  spanProcessors: [new LangfuseSpanProcessor()],
+});
+ 
+sdk.start();
 
 /**
  * Calls the OpenAI Chat Completion API with the provided parameters.
@@ -30,11 +39,12 @@ export async function openaiChatCompletion({
 	systemPrompt?: string;
 }) {
 	const openai = new OpenAI({ apiKey });
+    const client = observeOpenAI(openai, { isProd: process.env.NODE_ENV === 'production' });
 	const chatMessages: ChatCompletionMessageParam[] = systemPrompt
 		? [{ role: 'system', content: systemPrompt } as ChatCompletionMessageParam, ...messages]
 		: messages;
 	try {
-		const response = await openai.chat.completions.create({
+		const response = await client.chat.completions.create({
 			model,
 			messages: chatMessages,
 			temperature,
