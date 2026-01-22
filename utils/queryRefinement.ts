@@ -1,5 +1,6 @@
 import { selectReferenceTask } from "@/services/taskSelectorService";
 import { fetchTaskList, SavedTask } from "@/services/taskService";
+import { openaiChatCompletion } from '@/utils/aiHandler';
 import path from 'path';
 import fs from 'fs';
 
@@ -171,32 +172,23 @@ IntentType: ["FETCH"/"MODIFY"]`;
     ? `HISTORICAL CONTEXT (for reference only):\n${contextHistory}\n\n========================================\nCURRENT QUERY (PRIMARY FOCUS):\n${currentQuery}`
     : currentQuery;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
-        },
-        {
-          role: 'user',
-          content: userMessage,
-        },
-      ],
-      temperature: 0.5,
-      max_tokens: 4096,
-    }),
+  const content = await openaiChatCompletion({
+    apiKey,
+    messages: [
+      {
+        role: 'system',
+        content: systemPrompt,
+      },
+      {
+        role: 'user',
+        content: userMessage,
+      },
+    ],
+    model: 'gpt-4o',
+    temperature: 0.5,
+    max_tokens: 4096,
   });
-
-  const data = await response.json();
-  console.log('Validator Response 2:', data);
-  const content = data.choices[0]?.message?.content || `Refined Query: ${userInput}\nLanguage: EN\nConcepts: []\nAPI Needs: []\nEntities: []`;
+  console.log('Validator Response 2:', content);
 
   const refinedQueryMatch = content.match(/Refined Query: (.+)\nLanguage:/);
   const languageMatch = content.match(/Language: (.+)\nConcepts:/);

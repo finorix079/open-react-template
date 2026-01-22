@@ -1,5 +1,6 @@
 import { cosineSimilarity } from "@/src/utils/cosineSimilarity";
 import { SavedTask } from "./taskService";
+import { openaiChatCompletion } from '@/utils/aiHandler';
 import fs from 'fs';
 import path from 'path';
 import { RequestContext } from "./chatPlannerService";
@@ -98,30 +99,16 @@ Candidate tasks:
 ${JSON.stringify(shortlist, null, 2)}
 `;
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'Respond with JSON only. No prose.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.1,
-      max_tokens: 200,
-    }),
+  const content = await openaiChatCompletion({
+    apiKey,
+    messages: [
+      { role: 'system', content: 'Respond with JSON only. No prose.' },
+      { role: 'user', content: prompt },
+    ],
+    model: 'gpt-4o-mini',
+    temperature: 0.1,
+    max_tokens: 200,
   });
-
-  if (!res.ok) {
-    console.warn('Task similarity LLM failed:', await res.text());
-    return {};
-  }
-
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content?.trim() || '';
   try {
     const parsed = JSON.parse(content.replace(/```json|```/g, ''));
     const taskId = parsed.taskId;

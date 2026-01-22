@@ -1,4 +1,5 @@
 import { cosineSimilarity } from '@/src/utils/cosineSimilarity';
+import { openaiChatCompletion } from '@/utils/aiHandler';
 import fs from 'fs';
 import path from 'path';
 
@@ -424,18 +425,12 @@ export async function resolvePlaceholders(
   }
 
   try {
-    const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey_local}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a data extraction expert. Given a previous API response and the current step's requirements, extract the correct value to replace a "resolved_from_step_X" placeholder.
+    const extractedValue = await openaiChatCompletion({
+      apiKey: apiKey_local,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a data extraction expert. Given a previous API response and the current step's requirements, extract the correct value to replace a "resolved_from_step_X" placeholder.
 
 RULES:
 1. Analyze the current step's API call to understand what value is needed
@@ -457,24 +452,13 @@ Previous Step (Step ${placeholderStepNum}) Response:
 ${JSON.stringify(referencedStep.response, null, 2)}
 
 What value should replace "resolved_from_step_${placeholderStepNum}"? Return ONLY the value:`,
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 100,
-      }),
+        },
+      ],
+      model: 'gpt-4o',
+      temperature: 0.2,
+      max_tokens: 100,
     });
-
-    if (!llmResponse.ok) {
-      const errorText = await llmResponse.text();
-      console.error('LLM extraction failed:', errorText);
-      return { resolved: false, reason: `LLM extraction failed: ${errorText}` };
-    }
-
-    const data = await llmResponse.json();
-    const extractedValue = data.choices[0]?.message?.content?.trim();
-
     console.log(`✅ LLM extracted value: "${extractedValue}"`);
-
     if (!extractedValue || extractedValue.startsWith('ERROR:')) {
       return { resolved: false, reason: `Failed to extract value: ${extractedValue}` };
     }

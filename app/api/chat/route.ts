@@ -5,6 +5,7 @@ import { findApiParameters } from '@/services/apiSchemaLoader';
 import { clarifyAndRefineUserInput, handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
 import { SavedTask } from '@/services/taskService';
 import { sendToPlanner } from './planner';
+import { openaiChatCompletion } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
 
 // In-memory plan storage for approval workflow
@@ -68,18 +69,12 @@ async function detectResolutionVsExecution(
   apiKey: string
 ): Promise<'resolution' | 'execution'> {
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a query intent classifier.
+    const intent = await openaiChatCompletion({
+      apiKey,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a query intent classifier.
 
 RESOLUTION queries are those that:
 - Check, verify, or confirm the current state
@@ -95,32 +90,23 @@ EXECUTION queries are those that:
 - Examples: "Clear the watchlist", "Delete this item", "Add to team"
 
 Respond with ONLY ONE WORD: either "resolution" or "execution"`,
-          },
-          {
-            role: 'user',
-            content: `Query: ${refinedQuery}
+        },
+        {
+          role: 'user',
+          content: `Query: ${refinedQuery}
 
 Execution Plan: ${JSON.stringify(executionPlan, null, 2)}
 
 Intent:`,
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: 10,
-      }),
+        },
+      ],
+      model: 'gpt-4o',
+      temperature: 0.1,
+      max_tokens: 10,
     });
-
-    if (!response.ok) {
-      console.warn('Resolution detection failed, defaulting to execution');
-      return 'execution';
-    }
-
-    const data = await response.json();
-    const intent = data.choices[0]?.message?.content?.trim().toLowerCase();
-
-    console.log(`🔍 Detected intent: ${intent} for query: "${refinedQuery}"`);
-
-    if (intent === 'resolution') {
+    const result = intent?.trim().toLowerCase();
+    console.log(`🔍 Detected intent: ${result} for query: "${refinedQuery}"`);
+    if (result === 'resolution') {
       return 'resolution';
     }
     return 'execution';
@@ -219,18 +205,12 @@ async function summarizeMessage(message: Message, apiKey: string): Promise<Messa
   }
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a message summarizer that extracts ONLY critical information from conversation messages.
+    const summarized = await openaiChatCompletion({
+      apiKey,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a message summarizer that extracts ONLY critical information from conversation messages.
 
 CRITICAL RULES - NO DATA LOSS PERMITTED:
 1. Preserve ALL numbers, IDs, quantities, counts, statistics (e.g., "125 moves", "ID: 25", "3 Pokémon")
@@ -271,30 +251,23 @@ Input: "add pikachu to my team"
 Output: "add pikachu to my team" (keep short messages as-is)
 
 Now summarize this message:`,
-          },
-          {
-            role: 'user',
-            content: message.content,
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: 1024,
-      }),
+        },
+        {
+          role: 'user',
+          content: message.content,
+        },
+      ],
+      model: 'gpt-4o',
+      temperature: 0.1,
+      max_tokens: 1024,
     });
-
-    if (response.ok) {
-      const data = await response.json();
-      const summarized = data.choices[0]?.message?.content?.trim();
-      
-      if (summarized && summarized.length < message.content.length) {
-        console.log(`📝 Summarized message: ${message.content.length} → ${summarized.length} chars (${Math.round((1 - summarized.length/message.content.length) * 100)}% reduction)`);
-        return { ...message, content: summarized };
-      }
+    if (summarized && summarized.length < message.content.length) {
+      console.log(`📝 Summarized message: ${message.content.length} → ${summarized.length} chars (${Math.round((1 - summarized.length/message.content.length) * 100)}% reduction)`);
+      return { ...message, content: summarized };
     }
   } catch (error) {
     console.warn('Message summarization failed:', error);
   }
-
   return message;
 }
 
@@ -604,28 +577,15 @@ IMPORTANT RULES:
 Output:`;
 
     // Call LLM for table selection
-    const tableSelectionRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: tableSelectionPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 1024,
-      }),
+    let tableSelectionText = await openaiChatCompletion({
+      apiKey,
+      messages: [
+        { role: 'system', content: tableSelectionPrompt },
+      ],
+      model: 'gpt-4o',
+      temperature: 0.3,
+      max_tokens: 1024,
     });
-    
-    if (!tableSelectionRes.ok) {
-      throw new Error('Failed to select tables');
-    }
-    
-    const tableSelectionData = await tableSelectionRes.json();
-    let tableSelectionText = tableSelectionData.choices[0]?.message?.content?.trim() || '';
     
     // Parse table selection response
     const jsonMatch = tableSelectionText.match(/\{[\s\S]*\}/);
@@ -679,28 +639,16 @@ Generate ONLY the SQL query (no explanations):
 SQL:`;
     
     // Call LLM for SQL generation
-    const sqlGenRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: sqlPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 512,
-      }),
+    let sqlText = await openaiChatCompletion({
+      apiKey,
+      messages: [
+        { role: 'system', content: sqlPrompt },
+      ],
+      model: 'gpt-4o',
+      temperature: 0.3,
+      max_tokens: 512,
     });
-    
-    if (!sqlGenRes.ok) {
-      throw new Error('Failed to generate SQL');
-    }
-    
-    const sqlGenData = await sqlGenRes.json();
-    let sqlText = sqlGenData.choices[0]?.message?.content?.trim() || '';
+    sqlText = sqlText?.trim() || '';
     
     // Extract SQL statement
     const sqlMatch = sqlText.match(/select[\s\S]+?;/i);

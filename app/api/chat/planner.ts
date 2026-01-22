@@ -1,4 +1,5 @@
 import { getAllMatchedApis, getTopKResults, fetchPromptFile } from '@/services/chatPlannerService';
+import { openaiChatCompletion } from '@/utils/aiHandler';
 import fs from 'fs';
 import path from 'path';
 
@@ -82,27 +83,13 @@ GOAL_NOT_COMPLETED
 
       console.log('📊 Step 0: 验证目标完成情况...');
 
-      const validatorRes = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [{ role: 'user', content: validatorPrompt }],
-          temperature: 0.0,
-          max_tokens: 256,
-        }),
+      const validatorText = await openaiChatCompletion({
+        apiKey,
+        messages: [{ role: 'user', content: validatorPrompt }],
+        model: 'gpt-4o',
+        temperature: 0.0,
+        max_tokens: 256,
       });
-
-      if (!validatorRes.ok) {
-        console.error('Validator LLM request failed:', await validatorRes.text());
-        throw new Error('Failed to validate goal completion.');
-      }
-
-      const validatorData = await validatorRes.json();
-      const validatorText = validatorData.choices[0]?.message?.content.trim() || '';
       console.log('✅ 目标完成验证响应:', validatorText);
 
       if (validatorText === 'GOAL_COMPLETED') {
@@ -157,27 +144,13 @@ ${usefulData || '无'}
 
         // ==================== STEP 1: LLM 分析下一步意图 ====================
         console.log('📊 Step 1: 分析下一步意图...');
-        const intentRes = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o',
-            messages: [{ role: 'user', content: nextActionPrompt }],
-            temperature: 0.3,
-            max_tokens: 256,
-          }),
+        let intentJson = await openaiChatCompletion({
+          apiKey,
+          messages: [{ role: 'user', content: nextActionPrompt }],
+          model: 'gpt-4o',
+          temperature: 0.3,
+          max_tokens: 256,
         });
-
-        if (!intentRes.ok) {
-          console.error('Intent analysis failed:', await intentRes.text());
-          throw new Error('Failed to analyze next step intent.');
-        }
-
-        const intentData = await intentRes.json();
-        let intentJson = intentData.choices[0]?.message?.content || '';
         console.log('✅ 意图分析响应:', intentJson);
         let intentObj;
         // 尝试修正和提取伪JSON
@@ -306,30 +279,17 @@ ${usefulData || '无'}
 
     IMPORTANT: Execute ONLY the "Next Step Intent" above using SQL queries.`;
 
-      const plannerRes = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [
-            { role: 'system', content: plannerSystemPrompt },
-            { role: 'user', content: plannerUserMessage },
-          ],
-          temperature: 0.5,
-          max_tokens: 2048,
-        }),
+      let plannerResponse = await openaiChatCompletion({
+        apiKey,
+        messages: [
+          { role: 'system', content: plannerSystemPrompt },
+          { role: 'user', content: plannerUserMessage },
+        ],
+        model: 'gpt-4o',
+        temperature: 0.5,
+        max_tokens: 2048,
       });
-
-      if (!plannerRes.ok) {
-        console.error('Planner API request failed:', await plannerRes.text());
-        throw new Error('Failed to get a response from the planner.');
-      }
-
-      const plannerData = await plannerRes.json();
-      let plannerResponse = plannerData.choices[0]?.message?.content || '';
+      plannerResponse = plannerResponse.replace(/```json|```/g, '').trim();
       plannerResponse = plannerResponse.replace(/```json|```/g, '').trim();
 
       // 提取JSON
@@ -374,25 +334,13 @@ VALIDATION APPROACH:
 Output:
 { "needs_clarification": false } if the query looks reasonable
 { "needs_clarification": true, "reason": "...", "clarification_question": "..." } ONLY for obvious errors`;
-        const validationRes = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o',
-            messages: [{ role: 'user', content: validationPrompt }],
-            temperature: 0.2,
-            max_tokens: 512,
-          }),
+        let validationText = await openaiChatCompletion({
+          apiKey,
+          messages: [{ role: 'user', content: validationPrompt }],
+          model: 'gpt-4o',
+          temperature: 0.2,
+          max_tokens: 512,
         });
-        if (!validationRes.ok) {
-          console.error('Validation LLM request failed:', await validationRes.text());
-          break;
-        }
-        let validationText = await validationRes.json();
-        validationText = validationText.choices[0]?.message?.content || '';
         validationText = validationText.replace(/```json|```/g, '').trim();
         const validationMatch = validationText.match(/\{[\s\S]*\}/);
         if (validationMatch) validationText = validationMatch[0];
