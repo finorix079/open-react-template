@@ -1,7 +1,8 @@
 import OpenAI from 'openai';
 import { NodeSDK } from "@opentelemetry/sdk-node";
-import { observeOpenAI } from "@elasticdash/openai";
-import { LangfuseSpanProcessor } from "@elasticdash/otel";
+import { observeOpenAI } from "@langfuse/openai";
+import { LangfuseSpanProcessor } from "@langfuse/otel";
+import { observe } from '@elasticdash/tracing';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 const sdk = new NodeSDK({
@@ -23,7 +24,7 @@ sdk.start();
  * @returns The trimmed content of the first response message
  * @throws Error if the OpenAI API call fails
  */
-export async function openaiChatCompletion({
+export async function openaiChatCompletionOriginal({
 	apiKey,
 	messages,
 	model = 'gpt-4o',
@@ -39,7 +40,7 @@ export async function openaiChatCompletion({
 	systemPrompt?: string;
 }) {
 	const openai = new OpenAI({ apiKey });
-    const client = observeOpenAI(openai, { isProd: process.env.NODE_ENV === 'production' });
+    const client = observeOpenAI(openai);
 	const chatMessages: ChatCompletionMessageParam[] = systemPrompt
 		? [{ role: 'system', content: systemPrompt } as ChatCompletionMessageParam, ...messages]
 		: messages;
@@ -50,7 +51,8 @@ export async function openaiChatCompletion({
 			temperature,
 			max_tokens,
 		});
-		return response.choices[0]?.message?.content?.trim() || '';
+        const output = response.choices[0]?.message?.content?.trim() || '';
+		return output;
 	} catch (error: unknown) {
 		if (typeof error === 'object' && error !== null && 'response' in error) {
 			// @ts-expect-error: error shape from OpenAI SDK
@@ -59,3 +61,5 @@ export async function openaiChatCompletion({
 		throw new Error((error as Error).message || 'OpenAI API error');
 	}
 }
+
+export const openaiChatCompletion = observe(openaiChatCompletionOriginal);
