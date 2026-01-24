@@ -413,32 +413,44 @@ If intent is MODIFY, return the full remaining execution_plan (all steps, ordere
         console.warn(`⚠️ 需要重新生成计划 (retry ${retryCount}/${maxRetries})`);
 
         // 重试时带上correction message
-        const retryPlannerRes = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o',
-            messages: [
-              { role: 'system', content: plannerSystemPrompt },
-              { role: 'user', content: plannerUserMessage },
-              { role: 'assistant', content: plannerResponse },
-              { role: 'user', content: correctionMessage },
-            ],
-            temperature: 0.5,
-            max_tokens: 2048,
-          }),
+        // const retryPlannerRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        //   method: 'POST',
+        //   headers: {
+        //     'Content-Type': 'application/json',
+        //     Authorization: `Bearer ${apiKey}`,
+        //   },
+        //   body: JSON.stringify({
+        //     model: 'gpt-4o',
+        //     messages: [
+        //       { role: 'system', content: plannerSystemPrompt },
+        //       { role: 'user', content: plannerUserMessage },
+        //       { role: 'assistant', content: plannerResponse },
+        //       { role: 'user', content: correctionMessage },
+        //     ],
+        //     temperature: 0.5,
+        //     max_tokens: 2048,
+        //   }),
+        // });
+
+        // if (!retryPlannerRes.ok) {
+        //   console.error('Retry planner request failed');
+        //   throw new Error('Failed to get retry response from planner');
+        // }
+
+        // const retryData = await retryPlannerRes.json();
+        // plannerResponse = retryData.choices[0]?.message?.content || '';
+        plannerResponse = await openaiChatCompletion({
+          apiKey,
+          messages: [
+            { role: 'system', content: plannerSystemPrompt },
+            { role: 'user', content: plannerUserMessage },
+            { role: 'assistant', content: plannerResponse },
+            { role: 'user', content: correctionMessage },
+          ],
+          model: 'gpt-4o',
+          temperature: 0.5,
+          max_tokens: 2048,
         });
-
-        if (!retryPlannerRes.ok) {
-          console.error('Retry planner request failed');
-          throw new Error('Failed to get retry response from planner');
-        }
-
-        const retryData = await retryPlannerRes.json();
-        plannerResponse = retryData.choices[0]?.message?.content || '';
         plannerResponse = plannerResponse.replace(/```json|```/g, '').trim();
         const retryJsonMatch = plannerResponse.match(/\{[\s\S]*\}/);
         if (retryJsonMatch) {
