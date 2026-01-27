@@ -969,10 +969,12 @@ const handler = async (request: NextRequest) => {
     
     parent = startObservation('Customer Chat Request', {
       input: { messages },
-      metadata: { sessionId: clientSessionId }
+      metadata: { sessionId: clientSessionId, name: 'Customer Chat Request' }
     });
-    parent.updateTrace({ input: requestBody });
-    parent.updateTrace({ sessionId: clientSessionId });
+    parent.updateTrace({ 
+      input: requestBody, 
+      sessionId: clientSessionId 
+    });
 
     console.log('\n💬 Received messages:', messages);
 
