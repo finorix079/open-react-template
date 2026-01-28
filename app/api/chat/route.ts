@@ -7,7 +7,8 @@ import { SavedTask } from '@/services/taskService';
 import { sendToPlanner } from './planner';
 import { openaiChatCompletion } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
-import { ElasticDashSpan, observe, propagateAttributes, startObservation } from "@elasticdash/tracing";
+import { ElasticDashSpan, observe, propagateAttributes, startActiveObservation, startObservation } from "@elasticdash/tracing";
+// import { trace } from '@opentelemetry/api';
 
 // In-memory plan storage for approval workflow
 // Key: sessionId (generated from user conversation hash)
@@ -954,633 +955,640 @@ const handler = async (request: NextRequest) => {
     usefulDataArray: []
   };
 
+  let testCaseId = request.headers.get('x-reset-test-case') || '';
+
   let usefulData = new Map();
   let finalDeliverable = '';
-  let parent: ElasticDashSpan | null = null;
+  // let parent: ElasticDashSpan | null = null;
+  let output: any = null;
+  const requestBody = await request.json();
+  const { messages, sessionId: clientSessionId, isApproval: clientIsApproval } = requestBody;
 
-  try {
-    // Extract user token from Authorization header (optional)
-    const authHeader = request.headers.get('Authorization') || '';
-    const userToken = authHeader.startsWith('Bearer ') ? authHeader.replace('Bearer ', '') : '';
-    console.log('userToken:', userToken);
+  // parent = startObservation('Customer Chat Request', {
+  //   input: { messages },
+  //   metadata: { sessionId: clientSessionId, name: 'Customer Chat Request' }
+  // });
+  // parent.updateTrace({ 
+  //   sessionId: clientSessionId 
+  // });
 
-    const requestBody = await request.json();
-    const { messages, sessionId: clientSessionId, isApproval: clientIsApproval } = requestBody;
-    
-    parent = startObservation('Customer Chat Request', {
-      input: { messages },
-      metadata: { sessionId: clientSessionId, name: 'Customer Chat Request' }
+  return startActiveObservation("handleChatRequest", async (span: ElasticDashSpan) => {
+    span.updateTrace({ 
+      sessionId: clientSessionId,
+      metadata: { 
+        sessionId: clientSessionId, 
+        testCaseId, 
+        body: requestBody
+      }
     });
-    parent.updateTrace({ 
-      input: requestBody, 
-      sessionId: clientSessionId 
-    });
 
-    console.log('\n💬 Received messages:', messages);
+    try {
+      // Extract user token from Authorization header (optional)
+      const authHeader = request.headers.get('Authorization') || '';
+      const userToken = authHeader.startsWith('Bearer ') ? authHeader.replace('Bearer ', '') : '';
+      console.log('userToken:', userToken);
 
-    // Use client-provided session ID if available, otherwise generate one
-    const sessionId = clientSessionId || generateSessionId(messages);
-    console.log('📋 Session ID:', sessionId);
-    console.log('📋 Client provided sessionId:', clientSessionId);
-    console.log('📋 Pending plans:', Array.from(pendingPlans.keys()));
 
-    // Propagate sessionId to all child observations
-    return await propagateAttributes(
-      {
-        sessionId: sessionId,
-      },
-      async () => {
-        // All observations created here automatically have sessionId
-        // ... your logic ...
+      console.log('\n💬 Received messages:', messages);
 
-        // Check if user is approving a pending plan
-        const userMessage = [...messages].reverse().find((msg: Message) => msg.role === 'user');
-        const userInput = userMessage?.content?.trim().toLowerCase() || '';
-        const isApproval = clientIsApproval === true || /^(approve|yes|proceed|ok|confirm|go ahead)$/i.test(userInput);
-        
-        console.log('🔍 User input:', userInput);
-        console.log('🔍 Is approval:', isApproval);
-        console.log('🔍 Has pending plan:', pendingPlans.has(sessionId));
-        
-        if (isApproval && pendingPlans.has(sessionId)) {
-          console.log('✅ User approved pending plan, proceeding with execution...');
+      // Use client-provided session ID if available, otherwise generate one
+      const sessionId = clientSessionId || generateSessionId(messages);
+      console.log('📋 Session ID:', sessionId);
+      console.log('📋 Client provided sessionId:', clientSessionId);
+      console.log('📋 Pending plans:', Array.from(pendingPlans.keys()));
+
+      // Propagate sessionId to all child observations
+      await propagateAttributes(
+        {
+          sessionId: sessionId,
+        },
+        async () => {
+          // All observations created here automatically have sessionId
+          // ... your logic ...
+
+          // Check if user is approving a pending plan
+          const userMessage = [...messages].reverse().find((msg: Message) => msg.role === 'user');
+          const userInput = userMessage?.content?.trim().toLowerCase() || '';
+          const isApproval = clientIsApproval === true || /^(approve|yes|proceed|ok|confirm|go ahead)$/i.test(userInput);
           
-          const pendingData = pendingPlans.get(sessionId)!;
-          pendingPlans.delete(sessionId); // Remove from pending
+          console.log('🔍 User input:', userInput);
+          console.log('🔍 Is approval:', isApproval);
+          console.log('🔍 Has pending plan:', pendingPlans.has(sessionId));
           
+          if (isApproval && pendingPlans.has(sessionId)) {
+            console.log('✅ User approved pending plan, proceeding with execution...');
+            
+            const pendingData = pendingPlans.get(sessionId)!;
+            pendingPlans.delete(sessionId); // Remove from pending
+            
+            const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+            if (!apiKey) {
+              return NextResponse.json(
+                { error: 'OpenAI API key not configured' },
+                { status: 500 }
+              );
+            }
+
+            // Execute the approved plan
+            if (pendingData.plan.execution_plan && pendingData.plan.execution_plan.length > 0) {
+              console.log('▶️ Executing approved plan...');
+              
+              const result = await executeIterativePlanner(
+                pendingData.refinedQuery,
+                pendingData.topKResults,
+                pendingData.planResponse,
+                apiKey,
+                userToken,
+                pendingData.finalDeliverable,
+                usefulData,
+                pendingData.conversationContext,
+                pendingData.entities,
+                requestContext
+              );
+
+              // Sanitize and return result
+              const sanitizeForResponse = (obj: any): any => {
+                const seen = new WeakSet();
+                return JSON.parse(JSON.stringify(obj, (key, value) => {
+                  if (typeof value === 'object' && value !== null) {
+                    if (seen.has(value)) return '[Circular]';
+                    seen.add(value);
+                    if (key === 'request' || key === 'socket' || key === 'agent' || key === 'res') return '[Omitted]';
+                    if (key === 'config') return { method: value.method, url: value.url, data: value.data };
+                    if (key === 'headers' && value.constructor?.name === 'AxiosHeaders') {
+                      return Object.fromEntries(Object.entries(value));
+                    }
+                  }
+                  return value;
+                }));
+              };
+
+              if (result.error) {
+                output = {
+                  message: result.clarification_question || result.error,
+                  error: result.error,
+                  reason: result.reason,
+                  refinedQuery: pendingData.refinedQuery,
+                  topKResults: pendingData.topKResults,
+                  executedSteps: sanitizeForResponse(result.executedSteps || []),
+                  accumulatedResults: sanitizeForResponse(result.accumulatedResults || []),
+                };
+                return output;
+              }
+
+              output = {
+                message: result.message,
+                refinedQuery: pendingData.refinedQuery,
+                topKResults: pendingData.topKResults,
+                executedSteps: sanitizeForResponse(result.executedSteps),
+                accumulatedResults: sanitizeForResponse(result.accumulatedResults),
+                iterations: result.iterations,
+              };
+              return output;
+            }
+          }
+
+          // Check if user is rejecting a pending plan
+          const isRejection = userMessage && pendingPlans.has(sessionId) && !isApproval;
+          if (isRejection) {
+            console.log('❌ User rejected plan, clearing pending plan...');
+            pendingPlans.delete(sessionId);
+            
+            output = {
+              message: 'Plan rejected. Please tell me what you would like to change, or ask a new question.',
+              planRejected: true,
+            };
+            return output;
+          }
+
+          if (!messages || !Array.isArray(messages)) {
+            output = { error: 'Invalid messages format' };
+            return NextResponse.json(
+              output,
+              { status: 400 }
+            );
+          }
+
           const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
           if (!apiKey) {
+            output = { error: 'OpenAI API key not configured' };
             return NextResponse.json(
-              { error: 'OpenAI API key not configured' },
+              output,
               { status: 500 }
             );
           }
 
-          // Execute the approved plan
-          if (pendingData.plan.execution_plan && pendingData.plan.execution_plan.length > 0) {
-            console.log('▶️ Executing approved plan...');
-            
-            const result = await executeIterativePlanner(
-              pendingData.refinedQuery,
-              pendingData.topKResults,
-              pendingData.planResponse,
-              apiKey,
-              userToken,
-              pendingData.finalDeliverable,
-              usefulData,
-              pendingData.conversationContext,
-              pendingData.entities,
-              requestContext
+          // userMessage already extracted above for approval check
+          if (!userMessage) {
+            output = { error: 'No user message found' };
+            return NextResponse.json(
+              output,
+              { status: 400 }
             );
+          }
 
-            // Sanitize and return result
-            const sanitizeForResponse = (obj: any): any => {
-              const seen = new WeakSet();
-              return JSON.parse(JSON.stringify(obj, (key, value) => {
-                if (typeof value === 'object' && value !== null) {
-                  if (seen.has(value)) return '[Circular]';
-                  seen.add(value);
-                  if (key === 'request' || key === 'socket' || key === 'agent' || key === 'res') return '[Omitted]';
-                  if (key === 'config') return { method: value.method, url: value.url, data: value.data };
-                  if (key === 'headers' && value.constructor?.name === 'AxiosHeaders') {
-                    return Object.fromEntries(Object.entries(value));
-                  }
+          // Summarize conversation history for context (if messages > 10)
+          const summarizedMessages = await summarizeMessages(messages, apiKey);
+          
+          // Filter out plan-related messages (plans, approvals, rejections)
+          // Keep only user intentions and final results
+          const cleanedMessages = filterPlanMessages(summarizedMessages);
+          console.log(`📊 Context cleaning: ${summarizedMessages.length} messages → ${cleanedMessages.length} messages after filtering plans`);
+
+          // Detect if this is a follow-up query or an independent query
+          const isFollowUpQuery = /^(what about|how about|and|also|more|details?|show me|tell me more|what else|the same|similarly|like that|its|their|his|her)/i.test(userMessage.content.trim()) ||
+            userMessage.content.trim().length < 20 || // Very short queries likely need context
+            /\b(it|them|that|this|those|these)\b/i.test(userMessage.content.trim()); // Pronoun references
+
+          // Build conversation context for query refinement
+          // Include recent conversation history to maintain context continuity
+          // IMPORTANT: Limit context to prevent historical information from overshadowing current intent
+          let conversationContext = '';
+          const MAX_CONTEXT_TOKENS = 800; // Hard limit on context size (~3200 characters)
+          const MAX_CONTEXT_MESSAGES = 10; // Limit to last 3 CLEANED messages max (planning messages already filtered out)
+          
+          if (cleanedMessages.length > 1) {
+            // For follow-up queries: include more context (last 2-3 exchanges)
+            // For independent queries: include just previous message for potential reference
+            // Note: cleanedMessages already has plan-related messages removed, so we're selecting from cleaned history
+            const contextDepth = isFollowUpQuery ? Math.min(MAX_CONTEXT_MESSAGES, cleanedMessages.length - 1) : 1;
+            const recentMessages = cleanedMessages.slice(-1 - contextDepth, -1);
+            
+            // Additional summarization for context if messages are still too long
+            // This ensures we preserve critical data while reducing tokens
+            const contextMessages = await Promise.all(
+              recentMessages.map(async (msg) => {
+                // Only summarize long assistant responses for context
+                if (msg.role === 'assistant' && msg.content.length > 800) {
+                  const summarized = await summarizeMessage(msg, apiKey);
+                  return summarized;
                 }
-                return value;
-              }));
-            };
-
-            if (result.error) {
-              const output = {
-                message: result.clarification_question || result.error,
-                error: result.error,
-                reason: result.reason,
-                refinedQuery: pendingData.refinedQuery,
-                topKResults: pendingData.topKResults,
-                executedSteps: sanitizeForResponse(result.executedSteps || []),
-                accumulatedResults: sanitizeForResponse(result.accumulatedResults || []),
-              };
-              parent?.updateTrace({ output });
-              return NextResponse.json(output);
+                return msg;
+              })
+            );
+            
+            let tempContext = contextMessages
+              .map((msg) => `${msg.role}: ${msg.content}`)
+              .join('\n');
+            
+            // Enforce token limit on context
+            const contextTokens = estimateTokens(tempContext);
+            if (contextTokens > MAX_CONTEXT_TOKENS) {
+              // If context is too large, truncate older messages and keep only the most recent
+              const recentMsg = contextMessages[contextMessages.length - 1];
+              tempContext = `${recentMsg.role}: ${recentMsg.content}`;
+              console.log(`⚠️ Context truncated: ${contextTokens} → ${estimateTokens(tempContext)} tokens to stay within limit`);
             }
-
-            const output = {
-              message: result.message,
-              refinedQuery: pendingData.refinedQuery,
-              topKResults: pendingData.topKResults,
-              executedSteps: sanitizeForResponse(result.executedSteps),
-              accumulatedResults: sanitizeForResponse(result.accumulatedResults),
-              iterations: result.iterations,
-            };
-            parent?.updateTrace({ output });
-            return NextResponse.json(output);
-          }
-        }
-
-        // Check if user is rejecting a pending plan
-        const isRejection = userMessage && pendingPlans.has(sessionId) && !isApproval;
-        if (isRejection) {
-          console.log('❌ User rejected plan, clearing pending plan...');
-          pendingPlans.delete(sessionId);
-          
-          const output = {
-            message: 'Plan rejected. Please tell me what you would like to change, or ask a new question.',
-            planRejected: true,
-          };
-          parent?.updateTrace({ output });
-          return NextResponse.json(output);
-        }
-
-        if (!messages || !Array.isArray(messages)) {
-          const output = { error: 'Invalid messages format' };
-          parent?.updateTrace({ output });
-          return NextResponse.json(
-            output,
-            { status: 400 }
-          );
-        }
-
-        const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-        if (!apiKey) {
-          const output = { error: 'OpenAI API key not configured' };
-          parent?.updateTrace({ output });
-          return NextResponse.json(
-            output,
-            { status: 500 }
-          );
-        }
-
-        // userMessage already extracted above for approval check
-        if (!userMessage) {
-          const output = { error: 'No user message found' };
-          parent?.updateTrace({ output });
-          return NextResponse.json(
-            output,
-            { status: 400 }
-          );
-        }
-
-        // Summarize conversation history for context (if messages > 10)
-        const summarizedMessages = await summarizeMessages(messages, apiKey);
-        
-        // Filter out plan-related messages (plans, approvals, rejections)
-        // Keep only user intentions and final results
-        const cleanedMessages = filterPlanMessages(summarizedMessages);
-        console.log(`📊 Context cleaning: ${summarizedMessages.length} messages → ${cleanedMessages.length} messages after filtering plans`);
-
-        // Detect if this is a follow-up query or an independent query
-        const isFollowUpQuery = /^(what about|how about|and|also|more|details?|show me|tell me more|what else|the same|similarly|like that|its|their|his|her)/i.test(userMessage.content.trim()) ||
-          userMessage.content.trim().length < 20 || // Very short queries likely need context
-          /\b(it|them|that|this|those|these)\b/i.test(userMessage.content.trim()); // Pronoun references
-
-        // Build conversation context for query refinement
-        // Include recent conversation history to maintain context continuity
-        // IMPORTANT: Limit context to prevent historical information from overshadowing current intent
-        let conversationContext = '';
-        const MAX_CONTEXT_TOKENS = 800; // Hard limit on context size (~3200 characters)
-        const MAX_CONTEXT_MESSAGES = 10; // Limit to last 3 CLEANED messages max (planning messages already filtered out)
-        
-        if (cleanedMessages.length > 1) {
-          // For follow-up queries: include more context (last 2-3 exchanges)
-          // For independent queries: include just previous message for potential reference
-          // Note: cleanedMessages already has plan-related messages removed, so we're selecting from cleaned history
-          const contextDepth = isFollowUpQuery ? Math.min(MAX_CONTEXT_MESSAGES, cleanedMessages.length - 1) : 1;
-          const recentMessages = cleanedMessages.slice(-1 - contextDepth, -1);
-          
-          // Additional summarization for context if messages are still too long
-          // This ensures we preserve critical data while reducing tokens
-          const contextMessages = await Promise.all(
-            recentMessages.map(async (msg) => {
-              // Only summarize long assistant responses for context
-              if (msg.role === 'assistant' && msg.content.length > 800) {
-                const summarized = await summarizeMessage(msg, apiKey);
-                return summarized;
-              }
-              return msg;
-            })
-          );
-          
-          let tempContext = contextMessages
-            .map((msg) => `${msg.role}: ${msg.content}`)
-            .join('\n');
-          
-          // Enforce token limit on context
-          const contextTokens = estimateTokens(tempContext);
-          if (contextTokens > MAX_CONTEXT_TOKENS) {
-            // If context is too large, truncate older messages and keep only the most recent
-            const recentMsg = contextMessages[contextMessages.length - 1];
-            tempContext = `${recentMsg.role}: ${recentMsg.content}`;
-            console.log(`⚠️ Context truncated: ${contextTokens} → ${estimateTokens(tempContext)} tokens to stay within limit`);
-          }
-          
-          conversationContext = tempContext;
-        }
-
-        console.log(`🔍 Query type: ${isFollowUpQuery ? 'FOLLOW-UP (with extended context)' : 'INDEPENDENT (with minimal context)'}`);
-        if (conversationContext) {
-          const ctxTokens = estimateTokens(conversationContext);
-          const msgCount = conversationContext.split('\n').filter(line => line.match(/^(user|assistant):/)).length;
-          console.log(`📝 Using context (${msgCount} cleaned messages, ~${ctxTokens}/${MAX_CONTEXT_TOKENS} tokens, ${(ctxTokens/MAX_CONTEXT_TOKENS*100).toFixed(0)}% of limit):`);
-          console.log(conversationContext.substring(0, 200) + (conversationContext.length > 200 ? '...' : ''));
-        }
-
-        // Clarify and refine user input WITH conversation context (only for follow-ups)
-        const queryWithContext = conversationContext
-          ? `Previous context:\n${conversationContext}\n\nCurrent query: ${userMessage.content}`
-          : userMessage.content;
-
-        const { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask } = await clarifyAndRefineUserInput(queryWithContext, apiKey, userToken);
-        // 设置原始finalDeliverable为refinedQuery，保证不被中间依赖覆盖
-        if (!finalDeliverable) finalDeliverable = refinedQuery;
-        console.log('\n📝 QUERY REFINEMENT RESULTS:');
-        console.log('  Original:', userMessage.content);
-        console.log('  Refined Query:', refinedQuery);
-        console.log('  Language:', language);
-        console.log('  Concepts:', concepts);
-        console.log('  API Needs:', apiNeeds);
-        console.log('  Extracted Entities:', entities);
-        console.log('  Entity Count:', entities.length);
-
-        // Handle concepts and API needs
-        const { requiredApis, skippedApis } = handleQueryConceptsAndNeeds(concepts, apiNeeds);
-        console.log('Required APIs:', requiredApis);
-        console.log('Skipped APIs:', skippedApis);
-
-        // Multi-entity RAG: Generate embeddings for each entity and combine results
-        console.log(`\n🔍 Performing multi-entity RAG search for ${entities.length} entities`);
-
-
-        // 获取所有实体的匹配API（embedding检索+过滤）
-        const allMatchedApis = await getAllMatchedApis({ entities, intentType, apiKey, context: requestContext });
-
-        // Convert Map to array and sort by similarity
-        let topKResults = await getTopKResults(allMatchedApis, 20);
-
-        // Serialize useful data in chronological order (earliest first)
-        const str = serializeUsefulDataInOrder(requestContext);
-
-        // 调用独立planner函数 (Phase 1: Always with APIs first)
-        const planningStart = Date.now();
-        let actionablePlan;
-        let plannerRawResponse;
-
-        try {
-          const plannerResult = await runPlannerWithInputs({
-            topKResults,
-            refinedQuery,
-            apiKey,
-            usefulData: str,
-            conversationContext,
-            finalDeliverable,
-            intentType,
-            entities,
-            requestContext,
-            referenceTask
-          });
-          actionablePlan = plannerResult.actionablePlan;
-          plannerRawResponse = plannerResult.planResponse;
-        } catch (err: any) {
-          console.error('❌ Error during planning phase:', err);
-          
-          // Handle "No tables selected for SQL generation" error
-          if (err.message && err.message.includes('No tables selected for SQL generation')) {
-            const reason = err.cause || 'No relevant tables found for this query';
-            console.log('📝 Generating LLM response for no tables selected error:', reason);
             
-            // Generate a human-friendly response via LLM
-    //         const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    //           method: 'POST',
-    //           headers: {
-    //             'Content-Type': 'application/json',
-    //             Authorization: `Bearer ${apiKey}`,
-    //           },
-    //           body: JSON.stringify({
-    //             model: 'gpt-4o',
-    //             messages: [
-    //               {
-    //                 role: 'system',
-    //                 content: `You are a helpful assistant. The user asked a question, but the database doesn't have the necessary information to answer it. Politely explain why the database cannot fulfill their request.`
-    //               },
-    //               {
-    //                 role: 'user',
-    //                 content: `User's question: "${refinedQuery}"
-                    
-    // The database schema analysis shows: "${reason}"
+            conversationContext = tempContext;
+          }
 
-    // Please provide a friendly explanation of why this question cannot be answered with the current database.`
-    //               }
-    //             ],
-    //             temperature: 0.7,
-    //             max_tokens: 512,
-    //           }),
-    //         });
-            
-    //         if (response.ok) {
-    //           const data = await response.json();
-    //           const llmMessage = data.choices[0]?.message?.content || reason;
-    //           return NextResponse.json({
-    //             message: llmMessage,
-    //             refinedQuery,
-    //             final: true,
-    //             reason: reason
-    //           });
-    //         } else {
-    //           // Fallback if LLM call fails
-    //           return NextResponse.json({
-    //             message: reason,
-    //             refinedQuery,
-    //             final: true,
-    //             reason: reason
-    //           });
-    //         }
+          console.log(`🔍 Query type: ${isFollowUpQuery ? 'FOLLOW-UP (with extended context)' : 'INDEPENDENT (with minimal context)'}`);
+          if (conversationContext) {
+            const ctxTokens = estimateTokens(conversationContext);
+            const msgCount = conversationContext.split('\n').filter(line => line.match(/^(user|assistant):/)).length;
+            console.log(`📝 Using context (${msgCount} cleaned messages, ~${ctxTokens}/${MAX_CONTEXT_TOKENS} tokens, ${(ctxTokens/MAX_CONTEXT_TOKENS*100).toFixed(0)}% of limit):`);
+            console.log(conversationContext.substring(0, 200) + (conversationContext.length > 200 ? '...' : ''));
+          }
 
-            const llmMessage = await openaiChatCompletion({
-              apiKey,
-              messages: [
-                {
-                  role: 'system',
-                  content: `You are a helpful assistant. The user asked a question, but the database doesn't have the necessary information to answer it. Politely explain why the database cannot fulfill their request.`
-                },
-                {
-                  role: 'user',
-                  content: `User's question: "${refinedQuery}"
-                    
-The database schema analysis shows: "${reason}"
+          // Clarify and refine user input WITH conversation context (only for follow-ups)
+          const queryWithContext = conversationContext
+            ? `Previous context:\n${conversationContext}\n\nCurrent query: ${userMessage.content}`
+            : userMessage.content;
 
-Please provide a friendly explanation of why this question cannot be answered with the current database.`
-                }
-              ],
-              model: 'gpt-4o',
-              temperature: 0.7,
-              max_tokens: 512,
-            });
+          const { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask } = await clarifyAndRefineUserInput(queryWithContext, apiKey, userToken);
+          // 设置原始finalDeliverable为refinedQuery，保证不被中间依赖覆盖
+          if (!finalDeliverable) finalDeliverable = refinedQuery;
+          console.log('\n📝 QUERY REFINEMENT RESULTS:');
+          console.log('  Original:', userMessage.content);
+          console.log('  Refined Query:', refinedQuery);
+          console.log('  Language:', language);
+          console.log('  Concepts:', concepts);
+          console.log('  API Needs:', apiNeeds);
+          console.log('  Extracted Entities:', entities);
+          console.log('  Entity Count:', entities.length);
 
-            const output = {
-              message: llmMessage || reason,
+          // Handle concepts and API needs
+          const { requiredApis, skippedApis } = handleQueryConceptsAndNeeds(concepts, apiNeeds);
+          console.log('Required APIs:', requiredApis);
+          console.log('Skipped APIs:', skippedApis);
+
+          // Multi-entity RAG: Generate embeddings for each entity and combine results
+          console.log(`\n🔍 Performing multi-entity RAG search for ${entities.length} entities`);
+
+
+          // 获取所有实体的匹配API（embedding检索+过滤）
+          const allMatchedApis = await getAllMatchedApis({ entities, intentType, apiKey, context: requestContext });
+
+          // Convert Map to array and sort by similarity
+          let topKResults = await getTopKResults(allMatchedApis, 20);
+
+          // Serialize useful data in chronological order (earliest first)
+          const str = serializeUsefulDataInOrder(requestContext);
+
+          // 调用独立planner函数 (Phase 1: Always with APIs first)
+          const planningStart = Date.now();
+          let actionablePlan;
+          let plannerRawResponse;
+
+          try {
+            const plannerResult = await runPlannerWithInputs({
+              topKResults,
               refinedQuery,
-              final: true,
-              reason: reason
-            };
-            parent?.updateTrace({ output });
-            return NextResponse.json(output);
+              apiKey,
+              usefulData: str,
+              conversationContext,
+              finalDeliverable,
+              intentType,
+              entities,
+              requestContext,
+              referenceTask
+            });
+            actionablePlan = plannerResult.actionablePlan;
+            plannerRawResponse = plannerResult.planResponse;
+          } catch (err: any) {
+            console.error('❌ Error during planning phase:', err);
+            
+            // Handle "No tables selected for SQL generation" error
+            if (err.message && err.message.includes('No tables selected for SQL generation')) {
+              const reason = err.cause || 'No relevant tables found for this query';
+              console.log('📝 Generating LLM response for no tables selected error:', reason);
+              
+              // Generate a human-friendly response via LLM
+      //         const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      //           method: 'POST',
+      //           headers: {
+      //             'Content-Type': 'application/json',
+      //             Authorization: `Bearer ${apiKey}`,
+      //           },
+      //           body: JSON.stringify({
+      //             model: 'gpt-4o',
+      //             messages: [
+      //               {
+      //                 role: 'system',
+      //                 content: `You are a helpful assistant. The user asked a question, but the database doesn't have the necessary information to answer it. Politely explain why the database cannot fulfill their request.`
+      //               },
+      //               {
+      //                 role: 'user',
+      //                 content: `User's question: "${refinedQuery}"
+                      
+      // The database schema analysis shows: "${reason}"
+
+      // Please provide a friendly explanation of why this question cannot be answered with the current database.`
+      //               }
+      //             ],
+      //             temperature: 0.7,
+      //             max_tokens: 512,
+      //           }),
+      //         });
+              
+      //         if (response.ok) {
+      //           const data = await response.json();
+      //           const llmMessage = data.choices[0]?.message?.content || reason;
+      //           return NextResponse.json({
+      //             message: llmMessage,
+      //             refinedQuery,
+      //             final: true,
+      //             reason: reason
+      //           });
+      //         } else {
+      //           // Fallback if LLM call fails
+      //           return NextResponse.json({
+      //             message: reason,
+      //             refinedQuery,
+      //             final: true,
+      //             reason: reason
+      //           });
+      //         }
+
+              const llmMessage = await openaiChatCompletion({
+                apiKey,
+                messages: [
+                  {
+                    role: 'system',
+                    content: `You are a helpful assistant. The user asked a question, but the database doesn't have the necessary information to answer it. Politely explain why the database cannot fulfill their request.`
+                  },
+                  {
+                    role: 'user',
+                    content: `User's question: "${refinedQuery}"
+                      
+  The database schema analysis shows: "${reason}"
+
+  Please provide a friendly explanation of why this question cannot be answered with the current database.`
+                  }
+                ],
+                model: 'gpt-4o',
+                temperature: 0.7,
+                max_tokens: 512,
+              });
+
+              output = {
+                message: llmMessage || reason,
+                refinedQuery,
+                final: true,
+                reason: reason
+              };
+                return output;
+            }
+            
+            throw err;
           }
-          
-          throw err;
-        }
 
-        const planningDurationMs = Date.now() - planningStart;
-        console.log(`⏱️ Planning duration (initial): ${planningDurationMs}ms intent=${intentType} refined="${refinedQuery}"`);
-
-        if (actionablePlan?.impossible) {
-          console.log('🚫 Returning impossible response from planner (no relevant DB resources).');
-          const output = {
-            message: actionablePlan.message,
-            refinedQuery,
-            final: true,
-            reason: actionablePlan.reason || 'No relevant database resources found'
-          };
-          parent?.updateTrace({ output });
-          return NextResponse.json(output);
-        }
-
-        // Phase 2: Detect if this is a resolution query
-        const queryIntent = await detectResolutionVsExecution(refinedQuery, actionablePlan, apiKey);
-
-        if (queryIntent === 'resolution') {
-          console.log('🔄 Resolution query detected! Switching to table-only mode and re-planning...');
-
-          // Re-fetch using only tables (filter out API results)
-          const tableOnlyResults = topKResults.filter((item: any) =>
-            item.id && typeof item.id === 'string' && (item.id.startsWith('table-') || item.id === 'sql-query')
-          );
-
-          console.log(`📊 Filtered to ${tableOnlyResults.length} table-only results for resolution`);
-
-          // Re-run planner with table-only context
-          const replanStart = Date.now();
-          const replanResult = await runPlannerWithInputs({
-            topKResults: tableOnlyResults,
-            refinedQuery,
-            apiKey,
-            usefulData: str,
-            conversationContext,
-            finalDeliverable,
-            intentType: 'FETCH', // Force FETCH mode for resolution
-            entities,
-            requestContext,
-            referenceTask
-          });
-          const replanDurationMs = Date.now() - replanStart;
-
-          actionablePlan = replanResult.actionablePlan;
-          plannerRawResponse = replanResult.planResponse;
+          const planningDurationMs = Date.now() - planningStart;
+          console.log(`⏱️ Planning duration (initial): ${planningDurationMs}ms intent=${intentType} refined="${refinedQuery}"`);
 
           if (actionablePlan?.impossible) {
-            console.log('🚫 Replanned in table-only mode and still impossible (no relevant DB resources).');
-            const output = {
+            console.log('🚫 Returning impossible response from planner (no relevant DB resources).');
+            output = {
               message: actionablePlan.message,
               refinedQuery,
               final: true,
               reason: actionablePlan.reason || 'No relevant database resources found'
             };
-            parent?.updateTrace({ output });
-            return NextResponse.json(output);
+            return output;
           }
 
-          console.log(`⏱️ Planning duration (replan resolution): ${replanDurationMs}ms refined="${refinedQuery}"`);
-          console.log('✅ Re-planned with table-only context for resolution');
-        } else {
-          console.log('⚡ Execution query detected! Proceeding with API-based plan');
-        }
+          // Phase 2: Detect if this is a resolution query
+          const queryIntent = await detectResolutionVsExecution(refinedQuery, actionablePlan, apiKey);
 
-        // 保留原始finalDeliverable，不被plan覆盖
-        // finalDeliverable = actionablePlan.final_deliverable || finalDeliverable;
-        const planResponse = plannerRawResponse;
-        console.log('Generated Plan:', planResponse);
+          if (queryIntent === 'resolution') {
+            console.log('🔄 Resolution query detected! Switching to table-only mode and re-planning...');
 
-        // Note: Validation for multi-step dependencies is now handled in the sendToPlanner loop
-        // via placeholder detection, which is more robust and handles step dependencies correctly
+            // Re-fetch using only tables (filter out API results)
+            const tableOnlyResults = topKResults.filter((item: any) =>
+              item.id && typeof item.id === 'string' && (item.id.startsWith('table-') || item.id === 'sql-query')
+            );
 
-        // Handle clarification requests
-        if (actionablePlan.needs_clarification) {
-          const output = {
-            message: actionablePlan.clarification_question,
-            refinedQuery,
-            topKResults,
-          };
-          parent?.updateTrace({ output });
-          return NextResponse.json(output);
-        }
+            console.log(`📊 Filtered to ${tableOnlyResults.length} table-only results for resolution`);
 
-        // Execute the plan iteratively if execution_plan exists
-        if (actionablePlan.execution_plan && actionablePlan.execution_plan.length > 0) {
-          // All plans require user approval before execution
-          console.log('📋 Plan generated, storing for user approval...');
-          
-          pendingPlans.set(sessionId, {
-            plan: actionablePlan,
-            planResponse,
-            refinedQuery,
-            topKResults,
-            conversationContext,
-            finalDeliverable,
-            entities,
-            intentType,
-            timestamp: Date.now(),
-            referenceTask
-          });
+            // Re-run planner with table-only context
+            const replanStart = Date.now();
+            const replanResult = await runPlannerWithInputs({
+              topKResults: tableOnlyResults,
+              refinedQuery,
+              apiKey,
+              usefulData: str,
+              conversationContext,
+              finalDeliverable,
+              intentType: 'FETCH', // Force FETCH mode for resolution
+              entities,
+              requestContext,
+              referenceTask
+            });
+            const replanDurationMs = Date.now() - replanStart;
 
-          // Format plan for user review
-          const planSummary = {
-            goal: refinedQuery,
-            phase: actionablePlan.phase,
-            steps: actionablePlan.execution_plan.map((step: any) => ({
-              step_number: step.step_number,
-              description: step.description,
-              api: `${step.api.method.toUpperCase()} ${step.api.path}`,
-              parameters: step.api.parameters || {},
-              requestBody: step.api.requestBody || {}
-            })),
-            selected_apis: actionablePlan.selected_tools_spec || []
-          };
+            actionablePlan = replanResult.actionablePlan;
+            plannerRawResponse = replanResult.planResponse;
 
-          console.log('📤 Returning plan for user approval.');
-
-          // Create a human-readable summary for business operators
-          const entityNameForSummary = detectEntityName(refinedQuery) || 'the item you mentioned';
-          const humanReadableSteps = actionablePlan.execution_plan.map((step: any, index: number) => {
-            // Extract meaningful description from step
-            const stepDesc = step.description || `Execute step ${step.step_number}`;
-            const apiPath = step.api.path || '';
-            const apiMethod = step.api.method?.toUpperCase() || 'API CALL';
-            
-            // Create a simple business-friendly explanation using refined intent context
-            let businessExplanation = stepDesc;
-            
-            if (apiPath.includes('watchlist')) {
-              if (apiMethod === 'DELETE') businessExplanation = `Remove ${entityNameForSummary} from your watchlist`;
-              else if (apiMethod === 'POST') businessExplanation = `Add ${entityNameForSummary} to your watchlist`;
-              else if (apiMethod === 'GET') businessExplanation = 'See your watchlist';
-            } else if (apiPath.includes('teams')) {
-              if (apiMethod === 'DELETE') businessExplanation = `Delete the team for ${entityNameForSummary}`;
-              else if (apiMethod === 'POST') businessExplanation = `Create or update a team involving ${entityNameForSummary}`;
-              else if (apiMethod === 'GET') businessExplanation = 'Get team details';
-            } else if (apiPath.includes('/general/sql/query')) {
-              // SQL queries: make it intent-aware and natural
-              businessExplanation = `Look up information about ${entityNameForSummary}`;
-            } else if (apiPath.includes('search') || apiPath.includes('/pokemon/')) {
-              businessExplanation = `Search details for ${entityNameForSummary}`;
+            if (actionablePlan?.impossible) {
+              console.log('🚫 Replanned in table-only mode and still impossible (no relevant DB resources).');
+              output = {
+                message: actionablePlan.message,
+                refinedQuery,
+                final: true,
+                reason: actionablePlan.reason || 'No relevant database resources found'
+              };
+                return output;
             }
+
+            console.log(`⏱️ Planning duration (replan resolution): ${replanDurationMs}ms refined="${refinedQuery}"`);
+            console.log('✅ Re-planned with table-only context for resolution');
+          } else {
+            console.log('⚡ Execution query detected! Proceeding with API-based plan');
+          }
+
+          // 保留原始finalDeliverable，不被plan覆盖
+          // finalDeliverable = actionablePlan.final_deliverable || finalDeliverable;
+          const planResponse = plannerRawResponse;
+          console.log('Generated Plan:', planResponse);
+
+          // Note: Validation for multi-step dependencies is now handled in the sendToPlanner loop
+          // via placeholder detection, which is more robust and handles step dependencies correctly
+
+          // Handle clarification requests
+          if (actionablePlan.needs_clarification) {
+            output = {
+              message: actionablePlan.clarification_question,
+              refinedQuery,
+              topKResults,
+            };
+            return output;
+          }
+
+          // Execute the plan iteratively if execution_plan exists
+          if (actionablePlan.execution_plan && actionablePlan.execution_plan.length > 0) {
+            // All plans require user approval before execution
+            console.log('📋 Plan generated, storing for user approval...');
             
-            return `**Step ${index + 1}:** ${businessExplanation}\n   *(Technical: ${apiMethod} ${apiPath})*`;
-          }).join('\n\n');
+            pendingPlans.set(sessionId, {
+              plan: actionablePlan,
+              planResponse,
+              refinedQuery,
+              topKResults,
+              conversationContext,
+              finalDeliverable,
+              entities,
+              intentType,
+              timestamp: Date.now(),
+              referenceTask
+            });
 
-          const humanReadableMessage = `## 📋 Execution Plan
+            // Format plan for user review
+            const planSummary = {
+              goal: refinedQuery,
+              phase: actionablePlan.phase,
+              steps: actionablePlan.execution_plan.map((step: any) => ({
+                step_number: step.step_number,
+                description: step.description,
+                api: `${step.api.method.toUpperCase()} ${step.api.path}`,
+                parameters: step.api.parameters || {},
+                requestBody: step.api.requestBody || {}
+              })),
+              selected_apis: actionablePlan.selected_tools_spec || []
+            };
 
-        **Reference Task Used:** ${actionablePlan._from_reference_task ? 'Yes (reused saved plan)' : 'No (new plan)'}
+            console.log('📤 Returning plan for user approval.');
 
-    ${actionablePlan._replanned ? `
-    ## ⚠️ Plan Updated
+            // Create a human-readable summary for business operators
+            const entityNameForSummary = detectEntityName(refinedQuery) || 'the item you mentioned';
+            const humanReadableSteps = actionablePlan.execution_plan.map((step: any, index: number) => {
+              // Extract meaningful description from step
+              const stepDesc = step.description || `Execute step ${step.step_number}`;
+              const apiPath = step.api.path || '';
+              const apiMethod = step.api.method?.toUpperCase() || 'API CALL';
+              
+              // Create a simple business-friendly explanation using refined intent context
+              let businessExplanation = stepDesc;
+              
+              if (apiPath.includes('watchlist')) {
+                if (apiMethod === 'DELETE') businessExplanation = `Remove ${entityNameForSummary} from your watchlist`;
+                else if (apiMethod === 'POST') businessExplanation = `Add ${entityNameForSummary} to your watchlist`;
+                else if (apiMethod === 'GET') businessExplanation = 'See your watchlist';
+              } else if (apiPath.includes('teams')) {
+                if (apiMethod === 'DELETE') businessExplanation = `Delete the team for ${entityNameForSummary}`;
+                else if (apiMethod === 'POST') businessExplanation = `Create or update a team involving ${entityNameForSummary}`;
+                else if (apiMethod === 'GET') businessExplanation = 'Get team details';
+              } else if (apiPath.includes('/general/sql/query')) {
+                // SQL queries: make it intent-aware and natural
+                businessExplanation = `Look up information about ${entityNameForSummary}`;
+              } else if (apiPath.includes('search') || apiPath.includes('/pokemon/')) {
+                businessExplanation = `Search details for ${entityNameForSummary}`;
+              }
+              
+              return `**Step ${index + 1}:** ${businessExplanation}\n   *(Technical: ${apiMethod} ${apiPath})*`;
+            }).join('\n\n');
 
-    **Why the plan was regenerated:**
-    ${actionablePlan._replan_reason}
+            const humanReadableMessage = `## 📋 Execution Plan
 
-    **What changed:**
-    The plan now includes complete execution steps with both lookup and modification operations to fulfill your request.
+          **Reference Task Used:** ${actionablePlan._from_reference_task ? 'Yes (reused saved plan)' : 'No (new plan)'}
 
-    ---
+      ${actionablePlan._replanned ? `
+      ## ⚠️ Plan Updated
 
-    ` : ''}**What You're About To Do:**
-    ${refinedQuery}
+      **Why the plan was regenerated:**
+      ${actionablePlan._replan_reason}
 
-    **Action Breakdown:**
-    ${humanReadableSteps}
+      **What changed:**
+      The plan now includes complete execution steps with both lookup and modification operations to fulfill your request.
 
-    **Phase:** ${actionablePlan.phase.charAt(0).toUpperCase() + actionablePlan.phase.slice(1)} (${actionablePlan.phase === 'resolution' ? 'checking current state' : 'performing changes'})
+      ---
 
-    ---
+      ` : ''}**What You're About To Do:**
+      ${refinedQuery}
 
-    ## ✅ Next Steps
-    **Please review the plan above:**
-    - Reply with **"approve"** to proceed with the execution
-    - Reply with **"no"** or **"reject"** to cancel
-    - Or provide **specific feedback** if you'd like any adjustments
+      **Action Breakdown:**
+      ${humanReadableSteps}
 
-    **Technical Details:**
-    ${actionablePlan.execution_plan.map((step: any) => `
-    **Step ${step.step_number}:** ${step.description}
-    \`\`\`
-    ${step.api.method.toUpperCase()} ${step.api.path}
-    \`\`\`
-    ${step.api.parameters && Object.keys(step.api.parameters).length > 0 ? `Parameters: \`\`\`json\n${JSON.stringify(step.api.parameters, null, 2)}\n\`\`\`` : ''}
-    ${step.api.requestBody && Object.keys(step.api.requestBody).length > 0 ? `Body: \`\`\`json\n${JSON.stringify(step.api.requestBody, null, 2)}\n\`\`\`` : ''}
-    `).join('\n')}`;
+      **Phase:** ${actionablePlan.phase.charAt(0).toUpperCase() + actionablePlan.phase.slice(1)} (${actionablePlan.phase === 'resolution' ? 'checking current state' : 'performing changes'})
 
-          const output = {
-            message: humanReadableMessage,
-            planSummary,
-            awaitingApproval: true,
-            refinedQuery,
-            sessionId,
-            planResponse,
-            planningDurationMs,
-            usedReferencePlan: actionablePlan._from_reference_task || false
-          };
+      ---
 
-          parent?.updateTrace({ output });
-          return NextResponse.json(output);
-        }
+      ## ✅ Next Steps
+      **Please review the plan above:**
+      - Reply with **"approve"** to proceed with the execution
+      - Reply with **"no"** or **"reject"** to cancel
+      - Or provide **specific feedback** if you'd like any adjustments
 
-        // 如果plan为GOAL_COMPLETED或无execution_plan，自动进入final answer生成
-        if (
-          actionablePlan &&
-          (actionablePlan.message?.toLowerCase().includes('goal completed') ||
-            (Array.isArray(actionablePlan.execution_plan) && actionablePlan.execution_plan.length === 0))
-        ) {
-          // 直接用usefulData和accumulatedResults生成最终答案
-          const answer = await generateFinalAnswer(
-            refinedQuery,
-            [],
-            apiKey,
-            undefined,
-            str // usefulData
-          );
-          const output = {
-            message: answer,
+      **Technical Details:**
+      ${actionablePlan.execution_plan.map((step: any) => `
+      **Step ${step.step_number}:** ${step.description}
+      \`\`\`
+      ${step.api.method.toUpperCase()} ${step.api.path}
+      \`\`\`
+      ${step.api.parameters && Object.keys(step.api.parameters).length > 0 ? `Parameters: \`\`\`json\n${JSON.stringify(step.api.parameters, null, 2)}\n\`\`\`` : ''}
+      ${step.api.requestBody && Object.keys(step.api.requestBody).length > 0 ? `Body: \`\`\`json\n${JSON.stringify(step.api.requestBody, null, 2)}\n\`\`\`` : ''}
+      `).join('\n')}`;
+
+            output = {
+              message: humanReadableMessage,
+              planSummary,
+              awaitingApproval: true,
+              refinedQuery,
+              sessionId,
+              planResponse,
+              planningDurationMs,
+              usedReferencePlan: actionablePlan._from_reference_task || false
+            };
+
+            return output;
+          }
+
+          // 如果plan为GOAL_COMPLETED或无execution_plan，自动进入final answer生成
+          if (
+            actionablePlan &&
+            (actionablePlan.message?.toLowerCase().includes('goal completed') ||
+              (Array.isArray(actionablePlan.execution_plan) && actionablePlan.execution_plan.length === 0))
+          ) {
+            // 直接用usefulData和accumulatedResults生成最终答案
+            const answer = await generateFinalAnswer(
+              refinedQuery,
+              [],
+              apiKey,
+              undefined,
+              str // usefulData
+            );
+            output = {
+              message: answer,
+              refinedQuery,
+              topKResults,
+              planResponse,
+              final: true,
+              planningDurationMs,
+              usedReferencePlan: actionablePlan._from_reference_task || false
+            };
+            return output;
+          }
+          // 否则返回plan does not include an execution plan
+          output = {
+            message: 'Plan does not include an execution plan.',
             refinedQuery,
             topKResults,
             planResponse,
-            final: true,
             planningDurationMs,
             usedReferencePlan: actionablePlan._from_reference_task || false
           };
-          parent?.updateTrace({ output });
-          return NextResponse.json(output);
+          return output;
         }
-        // 否则返回plan does not include an execution plan
-        const output = {
-          message: 'Plan does not include an execution plan.',
-          refinedQuery,
-          topKResults,
-          planResponse,
-          planningDurationMs,
-          usedReferencePlan: actionablePlan._from_reference_task || false
-        };
-        parent?.updateTrace({ output });
-        return NextResponse.json(output);
-      }
-    );
-  } catch (error: any) {
-    console.warn('Error in chat API:', error);
-    const output = {
-      error: 'Internal server error'
-    };
-    parent?.updateTrace({ output });
-    return NextResponse.json(output, { status: 500 });
-  }
-  finally {
-    parent?.end();
-  }
+      );
+    } catch (error: any) {
+      console.warn('Error in chat API:', error);
+      output = {
+        error: 'Internal server error'
+      };
+      // parent?.updateTrace({ output });
+      // return NextResponse.json(output, { status: 500 });
+    }
+    finally {
+      // parent?.end();
+      span.update({
+        input: messages,
+        output: output
+      });
+      span.end();
+
+      return NextResponse.json(output);
+    }
+  });
 };
 
 // Validator function to check if more actions are needed
@@ -3420,11 +3428,4 @@ Please generate the next step in the plan, or indicate that no more steps are ne
   };
 }
 
-export const POST = observe(handler,
-  {
-    name: "Chat Completion Handler",
-    asType: "span", // or "generation", etc.
-    captureInput: true,
-    captureOutput: true,
-  }
-);
+export const POST = handler;
