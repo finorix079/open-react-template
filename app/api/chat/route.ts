@@ -956,6 +956,7 @@ const handler = async (request: NextRequest) => {
   };
 
   let testCaseId = request.headers.get('x-reset-test-case') || '';
+  let testCaseRunRecordId = request.headers.get('x-test-case-run-record-id') || '';
 
   let usefulData = new Map();
   let finalDeliverable = '';
@@ -978,6 +979,7 @@ const handler = async (request: NextRequest) => {
       metadata: { 
         sessionId: clientSessionId, 
         testCaseId, 
+        testCaseRunRecordId,
         body: requestBody
       }
     });

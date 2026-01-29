@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { observeOpenAI } from "@elasticdash/openai";
 import { ElasticDashSpanProcessor } from "@elasticdash/otel";
-import { observe } from '@elasticdash/tracing';
+// import { observe } from '@elasticdash/tracing';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 const sdk = new NodeSDK({
@@ -67,8 +67,10 @@ export async function openaiChatCompletionOriginal({
 	}
 }
 
-export const openaiChatCompletion = observe(openaiChatCompletionOriginal, {
-  name: "OpenAI Chat Completion",
-  captureInput: true,
-  captureOutput: true,
-});
+// export const openaiChatCompletion = observe(openaiChatCompletionOriginal, {
+//   name: "OpenAI Chat Completion",
+//   captureInput: true,
+//   captureOutput: true,
+// });
+
+export const openaiChatCompletion = openaiChatCompletionOriginal;
