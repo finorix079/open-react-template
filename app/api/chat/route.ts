@@ -957,6 +957,8 @@ const handler = async (request: NextRequest) => {
 
   let testCaseId = request.headers.get('x-reset-test-case') || '';
   let testCaseRunRecordId = request.headers.get('x-reset-test-case-run-record-id') || '';
+  console.log('Test Case ID:', testCaseId);
+  console.log('Test Case Run Record ID:', testCaseRunRecordId);
 
   let usefulData = new Map();
   let finalDeliverable = '';
