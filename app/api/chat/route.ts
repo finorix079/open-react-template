@@ -993,7 +993,8 @@ const handler = async (request: NextRequest) => {
       console.log('userToken:', userToken);
 
 
-      console.log('\n💬 Received messages:', messages);
+      console.log('\n💬 Received messages:', messages.length);
+      console.log('\n💬 Received final message:', messages[messages.length - 1]);
 
       // Use client-provided session ID if available, otherwise generate one
       const sessionId = clientSessionId || generateSessionId(messages);
