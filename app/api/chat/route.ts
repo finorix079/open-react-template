@@ -8,6 +8,8 @@ import { sendToPlanner } from './planner';
 import { openaiChatCompletion } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
 import { ElasticDashSpan, observe, propagateAttributes, startActiveObservation, startObservation } from "@elasticdash/tracing";
+import { writeFileSync } from 'fs';
+import { resolve } from 'path';
 // import { trace } from '@opentelemetry/api';
 
 // In-memory plan storage for approval workflow
@@ -955,10 +957,20 @@ const handler = async (request: NextRequest) => {
     usefulDataArray: []
   };
 
+
   let testCaseId = request.headers.get('x-reset-test-case') || '';
   let testCaseRunRecordId = request.headers.get('x-reset-test-case-run-record-id') || '';
   console.log('Test Case ID:', testCaseId);
   console.log('Test Case Run Record ID:', testCaseRunRecordId);
+
+  // Helper to log only this message to a file in the root folder
+  function logTestCaseHeadersToRoot(headers: Headers) {
+    const logPath = resolve(process.cwd(), 'debug_chat_request_headers.log');
+    const logMsg = `\n\n${new Date().toISOString()}\nHeaders: ${JSON.stringify(Object.fromEntries(headers.entries()), null, 2)}`;
+    writeFileSync(logPath, logMsg, { flag: 'a' });
+  }
+
+  logTestCaseHeadersToRoot(request.headers);
 
   let usefulData = new Map();
   let finalDeliverable = '';
