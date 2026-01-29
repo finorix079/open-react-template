@@ -2,8 +2,13 @@ import OpenAI from 'openai';
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { observeOpenAI } from "@elasticdash/openai";
 import { ElasticDashSpanProcessor } from "@elasticdash/otel";
-// import { observe } from '@elasticdash/tracing';
+import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+
+diag.setLogger(
+  new DiagConsoleLogger(),
+  DiagLogLevel.ERROR // or DiagLogLevel.WARN
+);
 
 const sdk = new NodeSDK({
     spanProcessors: [new ElasticDashSpanProcessor()],
