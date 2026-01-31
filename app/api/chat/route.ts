@@ -957,11 +957,12 @@ const handler = async (request: NextRequest) => {
     usefulDataArray: []
   };
 
-
   let testCaseId = request.headers.get('x-reset-test-case') || '';
   let testCaseRunRecordId = request.headers.get('x-reset-test-case-run-record') || '';
+  let oauthToken = request.headers.get('Authorization') || '';
   console.log('Test Case ID:', testCaseId);
   console.log('Test Case Run Record ID:', testCaseRunRecordId);
+  console.log('OAuth Token:', oauthToken);
 
   // Helper to log only this message to a file in the root folder
   function logTestCaseHeadersToRoot(headers: Headers) {
