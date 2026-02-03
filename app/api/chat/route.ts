@@ -977,12 +977,33 @@ const handler = async (request: NextRequest) => {
   let finalDeliverable = '';
   // let parent: ElasticDashSpan | null = null;
   let output: any = null;
-  const requestBody = await request.json()
-  .catch((err) => {
+  let requestBody: any = null;
+  try {
+    let rawBody: string | undefined;
+    // Check if request.body is a ReadableStream
+    if (request.body && typeof request.body.getReader === 'function') {
+      rawBody = await request.text();
+    } else if (typeof request.body === 'string') {
+      rawBody = request.body;
+    } else if (typeof request.body === 'object' && request.body !== null) {
+      // If body is already parsed (rare, but possible in some environments)
+      requestBody = request.body;
+    }
+    if (rawBody !== undefined) {
+      if (!rawBody || rawBody.trim().length === 0) {
+        console.error('Request body is empty:', rawBody);
+        return NextResponse.json({ error: 'Empty request body' }, { status: 400 });
+      }
+      requestBody = JSON.parse(rawBody);
+    }
+    if (!requestBody || typeof requestBody !== 'object') {
+      console.error('Request body is not a valid object:', requestBody);
+      return NextResponse.json({ error: 'Invalid JSON object in request body' }, { status: 400 });
+    }
+  } catch (err) {
     console.error('Failed to parse request body as JSON:', err);
-    console.error('Request body text:', request.body);
-    throw new Error('Invalid JSON in request body');
-  });
+    return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
+  }
   const { messages, sessionId: clientSessionId, isApproval: clientIsApproval } = requestBody;
 
   // parent = startObservation('Customer Chat Request', {
