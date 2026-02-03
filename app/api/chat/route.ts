@@ -977,7 +977,12 @@ const handler = async (request: NextRequest) => {
   let finalDeliverable = '';
   // let parent: ElasticDashSpan | null = null;
   let output: any = null;
-  const requestBody = await request.json();
+  const requestBody = await request.json()
+  .catch((err) => {
+    console.error('Failed to parse request body as JSON:', err);
+    console.error('Request body text:', request.body);
+    throw new Error('Invalid JSON in request body');
+  });
   const { messages, sessionId: clientSessionId, isApproval: clientIsApproval } = requestBody;
 
   // parent = startObservation('Customer Chat Request', {
