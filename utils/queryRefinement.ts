@@ -1,5 +1,8 @@
-import { selectReferenceTask } from "@/app/api/chat/route";
+import { selectReferenceTask } from "@/services/taskSelectorService";
 import { fetchTaskList, SavedTask } from "@/services/taskService";
+import { openaiChatCompletion } from '@/utils/aiHandler';
+import path from 'path';
+import fs from 'fs';
 
 export async function clarifyAndRefineUserInput(
   userInput: string,
@@ -14,18 +17,69 @@ export async function clarifyAndRefineUserInput(
   intentType: "FETCH" | "MODIFY",
   referenceTask?: SavedTask
 }> {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: `You are an assistant that refines user queries and identifies what needs to be investigated to answer them.
+  // Extract current query from context if present
+  let currentQuery = userInput;
+  let contextHistory = '';
+  
+  const contextMatch = userInput.match(/^Previous context:\n([\s\S]*?)\n\nCurrent query: (.+)$/);
+  if (contextMatch) {
+    contextHistory = contextMatch[1];
+    currentQuery = contextMatch[2];
+  }
+  
+  // Build the prompt with CURRENT query emphasized as PRIMARY
+  const systemPrompt = `You are an assistant that refines user queries and identifies what needs to be investigated to answer them.
+
+CRITICAL - DATABASE RULES:
+==========================
+1. ALL identifiers in the database are LOWERCASE with HYPHENS (not spaces)
+   - "Pikachu" → stored as "pikachu" 
+   - "Primal Groudon" → stored as "primal-groudon"
+   - "Thunder Shock" → stored as "thunder-shock"
+   - "Nidoran♂" → stored as "nidoran-m"
+
+2. When the user mentions an entity name, convert it to the database format (lowercase, hyphens)
+   - This is important for query refinement and entity extraction
+   - Keep track of the original user term AND the database identifier format
+
+3. Many entities have separate name tables for localization:
+   - pokemon ← pokemon_species_names (local_language_id=9 for English)
+   - moves ← move_names (local_language_id=9 for English)
+   - abilities ← ability_names (local_language_id=9 for English)
+   - When generating queries, may need to JOIN these tables
+
+IMPORTANT: The user input may contain conversation history. When present:
+- Pay attention to previous context to resolve references like "it", "them", "that", "this", "its", "their"
+- Look for previously mentioned entities or subjects
+- The format will be "Previous context:\n[previous messages]\n\nCurrent query: [actual query]"
+- Resolve references in the current query by connecting them to entities in previous context
+- Example: If previous message mentioned "Pikachu" and current query is "show me its moves", resolve to "show me Pikachu's moves"
+
+CRITICAL - FOLLOW-UP QUERIES WITH "AMONG THEM" (DEFAULT RULE):
+**Use previous result set UNLESS explicitly told not to.**
+
+When the conversation context contains a numbered/bulleted list of entities from a previous query:
+- Treat ALL follow-up queries as scoped to that result set by default
+- Look for these trigger phrases (they indicate follow-up queries):
+  * "among them", "among those", "of them", "of those"
+  * "which one", "which", "who", "what about" 
+  * "the highest", "the lowest", "the one with"
+  * Any superlative question after a list: "Who has the...", "Which has the...", "What about the..."
+
+When to NOT use previous list (explicit exceptions):
+- User says: "from all pokemon", "overall", "in the entire database"
+- User says: "not from that list", "besides them", "excluding them"
+- Only if explicitly stated should you ignore the previous result set
+
+Action steps:
+1. EXTRACT the list of entities from the PREVIOUS ASSISTANT RESPONSE
+2. Look for numbered lists (1. Name, 2. Name, 3. Name) or bullet points
+3. Convert each name to lowercase identifier format (e.g., "Abra" → "abra")
+4. Include this extracted list in the "Entities" field as "among [extracted list]"
+5. Example: If previous response was "1. Abra\n2. Azurill\n3. Blipbug\n...", and current query is "Which one has highest attack?"
+   - Refined Query: "Identify which pokemon has the highest attack among [Abra, Azurill, Blipbug, ...]"
+   - Entities: ["among-abra-azurill-blipbug-blissey-bounsweet-bronzor-budew-bunnelby-burmy-cascoon"]
+   - This signals to the planner to search within this specific list, not re-apply original filters
 
 For each user query:
 1. Refine it into a clearer format
@@ -34,10 +88,16 @@ For each user query:
 4. Determine what API functionalities are needed
 5. **MOST IMPORTANT**: Identify what entities/data sources require investigation to answer this query
 
+CRITICAL - FINAL ANSWER REQUIREMENT:
+The final answer MUST ALWAYS include human-readable names/identifiers, not just IDs.
+- Example ✅: "Pikachu (ID: 25), Charizard (ID: 6), Mewtwo (ID: 150)"
+- Example ❌: "IDs: 25, 6, 150"
+This means queries MUST retrieve names alongside IDs via JOINs.
+
 When identifying investigatory entities, ask yourself: "In this sentence, what entities are important that require investigation?"
 
 Focus on:
-- Specific subjects mentioned (e.g., "Magnemite", "Pikachu")
+- Specific subjects mentioned (e.g., "Magnemite", "Pikachu") - REMEMBER TO CONVERT TO LOWERCASE
 - Data categories needed (e.g., "steel moves", "fire pokemon")
 - Relationships/capabilities (e.g., "moves a pokemon can learn", "pokemon in a region")
 - Detail/attribute queries (e.g., "pokemon details", "move power", "ability effects")
@@ -106,21 +166,29 @@ Language: [language code]
 Concepts: [list of concepts]
 API Needs: [list of API functionalities needed]
 Entities: [list of entities that require investigation to answer the query]
-IntentType: ["FETCH"/"MODIFY"]`,
-        },
-        {
-          role: 'user',
-          content: userInput,
-        },
-      ],
-      temperature: 0.5,
-      max_tokens: 4096,
-    }),
-  });
+IntentType: ["FETCH"/"MODIFY"]`;
 
-  const data = await response.json();
-  console.log('Validator Response 2:', data);
-  const content = data.choices[0]?.message?.content || `Refined Query: ${userInput}\nLanguage: EN\nConcepts: []\nAPI Needs: []\nEntities: []`;
+  const userMessage = contextHistory 
+    ? `HISTORICAL CONTEXT (for reference only):\n${contextHistory}\n\n========================================\nCURRENT QUERY (PRIMARY FOCUS):\n${currentQuery}`
+    : currentQuery;
+
+  const content = await openaiChatCompletion({
+    apiKey,
+    messages: [
+      {
+        role: 'system',
+        content: systemPrompt,
+      },
+      {
+        role: 'user',
+        content: userMessage,
+      },
+    ],
+    model: 'gpt-4o',
+    temperature: 0.5,
+    max_tokens: 4096,
+  });
+  console.log('Validator Response 2:', content);
 
   const refinedQueryMatch = content.match(/Refined Query: (.+)\nLanguage:/);
   const languageMatch = content.match(/Language: (.+)\nConcepts:/);
@@ -144,6 +212,20 @@ IntentType: ["FETCH"/"MODIFY"]`,
       console.log(`\n🔍 Fetching saved tasks for reference matching (intent: ${intentType})...`);
       const tasks = await fetchTaskList(userToken);
       console.log('Fetched tasks: ', tasks);
+      // Log fetched tasks to file (server-side only)
+      try {
+        const logPath = path.join(process.cwd(), '.temp', 'tasks_fetched.txt');
+        
+        const timestamp = new Date().toISOString();
+        const logContent = `\n=== Tasks Fetched at ${timestamp} ===\n` +
+          `Total tasks: ${tasks.length}\n\n` +
+          JSON.stringify(tasks, null, 2) + '\n';
+        
+        await fs.writeFileSync(logPath, logContent);
+        console.log(`Logged fetched tasks to ${logPath}`);
+      } catch (err) {
+        console.error('Failed to log tasks to file:', err);
+      }
       const match = await selectReferenceTask(refinedQuery, tasks, apiKey, intentType);
       console.log('Reference task matching result: ', match);
       if (match.task && typeof match.score === 'number') {

@@ -3,52 +3,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { fetchPokemonDetails } from "@/services/pokemonService";
+import { getTypeClass } from "@/services/typeStyleService";
 
 import { Button } from "@headlessui/react";
 
-export const typeColors = {
-  normal: "#A8A878",
-  fighting: "#C03028",
-  flying: "#A890F0",
-  poison: "#A040A0",
-  ground: "#E0C068",
-  rock: "#B8A038",
-  bug: "#A8B820",
-  ghost: "#705898",
-  steel: "#B8B8D0",
-  fire: "#F08030",
-  water: "#6890F0",
-  grass: "#78C850",
-  electric: "#F8D030",
-  psychic: "#F85888",
-  ice: "#98D8D8",
-  dragon: "#7038F8",
-  dark: "#705848",
-  fairy: "#EE99AC",
-  stellar: "#FFD700", // Custom color for stellar
-};
-
-export const typeClasses: Record<string, string> = {
-  fire: "bg-orange-500/15 text-orange-300 border border-orange-500/40",
-  water: "bg-blue-500/15 text-blue-300 border border-blue-500/40",
-  grass: "bg-green-500/15 text-green-300 border border-green-500/40",
-  electric: "bg-yellow-500/15 text-yellow-300 border border-yellow-500/40",
-  ice: "bg-cyan-400/15 text-cyan-200 border border-cyan-400/40",
-  fighting: "bg-red-600/15 text-red-300 border border-red-600/40",
-  poison: "bg-purple-500/15 text-purple-300 border border-purple-500/40",
-  ground: "bg-amber-600/15 text-amber-300 border border-amber-600/40",
-  flying: "bg-indigo-400/15 text-indigo-200 border border-indigo-400/40",
-  psychic: "bg-pink-500/15 text-pink-300 border border-pink-500/40",
-  bug: "bg-lime-500/15 text-lime-300 border border-lime-500/40",
-  rock: "bg-amber-800/15 text-amber-200 border border-amber-800/40",
-  ghost: "bg-indigo-700/15 text-indigo-200 border border-indigo-700/40",
-  dragon: "bg-purple-700/15 text-purple-200 border border-purple-700/40",
-  dark: "bg-gray-700/20 text-gray-200 border border-gray-700/50",
-  steel: "bg-slate-500/15 text-slate-200 border border-slate-500/40",
-  fairy: "bg-rose-400/15 text-rose-200 border border-rose-400/40",
-  normal: "bg-gray-500/15 text-gray-200 border border-gray-500/30",
-  stellar: "bg-amber-300/15 text-amber-100 border border-amber-300/40",
-};
+// export const typeColors = {
+//   normal: "#A8A878",
+//   fighting: "#C03028",
+//   flying: "#A890F0",
+//   poison: "#A040A0",
+//   ground: "#E0C068",
+//   rock: "#B8A038",
+//   bug: "#A8B820",
+//   ghost: "#705898",
+//   steel: "#B8B8D0",
+//   fire: "#F08030",
+//   water: "#6890F0",
+//   grass: "#78C850",
+//   electric: "#F8D030",
+//   psychic: "#F85888",
+//   ice: "#98D8D8",
+//   dragon: "#7038F8",
+//   dark: "#705848",
+//   fairy: "#EE99AC",
+//   stellar: "#FFD700", // Custom color for stellar
+// };
 
 const PokemonDetailPage = () => {
   const router = useRouter();
@@ -56,6 +35,7 @@ const PokemonDetailPage = () => {
   const id = params?.id ? String(params.id) : "";
   const [pokemon, setPokemon] = useState<any | null>(null);
   const [filter, setFilter] = useState("level-up");
+  const [hoveredAbility, setHoveredAbility] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -94,11 +74,6 @@ const PokemonDetailPage = () => {
       </div>
     );
   }
-
-  const getTypeClass = (type: string) => {
-    const key = (type || "normal").toLowerCase();
-    return typeClasses[key] || typeClasses.normal;
-  };
 
   const filteredMoves = (pokemon.moves || []).filter((move: any) => filter === "all" || move.move_method === filter);
 
@@ -151,6 +126,36 @@ const PokemonDetailPage = () => {
                 <p>No type information available</p>
               )}
             </div>
+            
+            {pokemon.abilities && pokemon.abilities.length > 0 && (
+              <div className="mt-4">
+                <h3 className="font-mono text-sm text-muted-foreground mb-2">Abilities</h3>
+                <div className="flex flex-wrap gap-2">
+                  {pokemon.abilities.map((ability: any, index: number) => (
+                    <div 
+                      key={index} 
+                      className="relative"
+                      onMouseEnter={() => setHoveredAbility(index)}
+                      onMouseLeave={() => setHoveredAbility(null)}
+                    >
+                      <span className="cursor-help rounded-lg border border-border/50 bg-background px-3 py-1.5 text-sm font-medium capitalize hover:bg-border/20 transition-colors inline-block">
+                        {ability.ability_name || ability.ability}
+                      </span>
+                      {ability.short_effect && hoveredAbility === index && (
+                        <div className="absolute bottom-full left-0 mb-2 z-50 pointer-events-none">
+                          <div className="rounded-md bg-slate-900 text-white px-3 py-2 text-xs shadow-xl border border-slate-700 w-[250px] whitespace-normal">
+                            {ability.short_effect}
+                            <div className="absolute left-4 top-full -mt-[1px]">
+                              <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
