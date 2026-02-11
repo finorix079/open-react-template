@@ -7,7 +7,7 @@ import { SavedTask } from '@/services/taskService';
 import { sendToPlanner } from './planner';
 import { openaiChatCompletion } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
-import { ElasticDashSpan, observe, propagateAttributes, startActiveObservation, startObservation } from "@elasticdash/tracing";
+import { ElasticDashSpan, propagateAttributes, startActiveObservation } from "@elasticdash/tracing";
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
 // import { trace } from '@opentelemetry/api';
