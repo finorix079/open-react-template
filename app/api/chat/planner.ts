@@ -1,5 +1,5 @@
 import { getAllMatchedApis, getTopKResults, fetchPromptFile } from '@/services/chatPlannerService';
-import { openaiChatCompletion } from '@/utils/aiHandler';
+import { openaiChatCompletion, kimiChatCompletion } from '@/utils/aiHandler';
 import fs from 'fs';
 import path from 'path';
 
@@ -13,7 +13,6 @@ import path from 'path';
  */
 export async function sendToPlanner(
   refinedQuery: string,
-  apiKey: string,
   usefulData: string,
   conversationContext?: string,
   planIntentType?: 'FETCH' | 'MODIFY',
@@ -84,9 +83,7 @@ Begin judgment:`;
       console.log('📊 Step 0: 验证目标完成情况...');
 
       const validatorText = await openaiChatCompletion({
-        apiKey,
         messages: [{ role: 'user', content: validatorPrompt }],
-        model: 'gpt-4o',
         temperature: 0.0,
         max_tokens: 256,
       });
@@ -144,10 +141,8 @@ Begin planning:`;
 
         // ==================== STEP 1: LLM 分析下一步意图 ====================
         console.log('📊 Step 1: 分析下一步意图...');
-        let intentJson = await openaiChatCompletion({
-          apiKey,
+        let intentJson = await kimiChatCompletion({
           messages: [{ role: 'user', content: nextActionPrompt }],
-          model: 'gpt-4o',
           temperature: 0.3,
           max_tokens: 256,
         });
@@ -201,12 +196,12 @@ Begin planning:`;
         // For FETCH intents: retrieve only tables
         if (intentType === 'MODIFY') {
           console.log('📊 MODIFY intent: retrieving both TABLE and API resources...');
-          const allMatchedApis = await getAllMatchedApis({ entities: [nextIntent], intentType: 'MODIFY', apiKey });
+          const allMatchedApis = await getAllMatchedApis({ entities: [nextIntent], intentType: 'MODIFY' });
           ragApis = await getTopKResults(allMatchedApis, 20);
           console.log(`✅ 检索到 ${ragApis.length} 个相关资源 (tables + APIs)`);
         } else {
           console.log('📊 FETCH intent: retrieving only TABLE resources...');
-          const allMatchedApis = await getAllMatchedApis({ entities: [nextIntent], intentType: 'FETCH', apiKey });
+          const allMatchedApis = await getAllMatchedApis({ entities: [nextIntent], intentType: 'FETCH' });
           // Filter to only include table schemas (not REST APIs)
           const allResults = await getTopKResults(allMatchedApis, 20);
           ragApis = allResults.filter((item: any) => 
@@ -257,7 +252,7 @@ Begin planning:`;
 
     Available Resources (Tables + APIs): ${ragApiDesc}
 
-    Useful Data: ${usefulData || '无'}
+    Useful Data: ${usefulData || 'None'}
 
     Output the full execution_plan array covering resolution (SQL queries) + mutation (REST APIs) + validation (SQL queries) steps.`
         : `${contextInfo}User's Ultimate Goal: ${refinedQuery}
@@ -280,12 +275,10 @@ Begin planning:`;
     IMPORTANT: Execute ONLY the "Next Step Intent" above using SQL queries.`;
 
       let plannerResponse = await openaiChatCompletion({
-        apiKey,
         messages: [
           { role: 'system', content: plannerSystemPrompt },
           { role: 'user', content: plannerUserMessage },
         ],
-        model: 'gpt-4o',
         temperature: 0.5,
         max_tokens: 2048,
       });
@@ -335,9 +328,7 @@ Output:
 { "needs_clarification": false } if the query looks reasonable
 { "needs_clarification": true, "reason": "...", "clarification_question": "..." } ONLY for obvious errors`;
         let validationText = await openaiChatCompletion({
-          apiKey,
           messages: [{ role: 'user', content: validationPrompt }],
-          model: 'gpt-4o',
           temperature: 0.2,
           max_tokens: 512,
         });
@@ -412,42 +403,13 @@ If intent is MODIFY, return the full remaining execution_plan (all steps, ordere
 
         console.warn(`⚠️ 需要重新生成计划 (retry ${retryCount}/${maxRetries})`);
 
-        // 重试时带上correction message
-        // const retryPlannerRes = await fetch('https://api.openai.com/v1/chat/completions', {
-        //   method: 'POST',
-        //   headers: {
-        //     'Content-Type': 'application/json',
-        //     Authorization: `Bearer ${apiKey}`,
-        //   },
-        //   body: JSON.stringify({
-        //     model: 'gpt-4o',
-        //     messages: [
-        //       { role: 'system', content: plannerSystemPrompt },
-        //       { role: 'user', content: plannerUserMessage },
-        //       { role: 'assistant', content: plannerResponse },
-        //       { role: 'user', content: correctionMessage },
-        //     ],
-        //     temperature: 0.5,
-        //     max_tokens: 2048,
-        //   }),
-        // });
-
-        // if (!retryPlannerRes.ok) {
-        //   console.error('Retry planner request failed');
-        //   throw new Error('Failed to get retry response from planner');
-        // }
-
-        // const retryData = await retryPlannerRes.json();
-        // plannerResponse = retryData.choices[0]?.message?.content || '';
         plannerResponse = await openaiChatCompletion({
-          apiKey,
           messages: [
             { role: 'system', content: plannerSystemPrompt },
             { role: 'user', content: plannerUserMessage },
             { role: 'assistant', content: plannerResponse },
             { role: 'user', content: correctionMessage },
           ],
-          model: 'gpt-4o',
           temperature: 0.5,
           max_tokens: 2048,
         });

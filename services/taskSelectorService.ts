@@ -62,7 +62,6 @@ function findTopKSimilarTable(queryEmbedding: number[], topK: number = 3, contex
 export async function selectReferenceTask(
   refinedQuery: string,
   tasks: SavedTask[],
-  apiKey: string,
   intentType?: 'FETCH' | 'MODIFY'
 ): Promise<ReferenceTaskMatch> {
   if (!tasks || tasks.length === 0) return {};
@@ -100,7 +99,6 @@ ${JSON.stringify(shortlist, null, 2)}
 `;
 
   const content = await openaiChatCompletion({
-    apiKey,
     messages: [
       { role: 'system', content: 'Respond with JSON only. No prose.' },
       { role: 'user', content: prompt },
@@ -125,7 +123,7 @@ ${JSON.stringify(shortlist, null, 2)}
 
 
 // 独立函数：多实体embedding检索与API过滤
-export async function getAllMatchedApis({ entities, intentType, apiKey, context }: { entities: string[], intentType: "FETCH" | "MODIFY", apiKey: string, context?: RequestContext }): Promise<Map<string, any>> {
+export async function getAllMatchedApis({ entities, intentType, context }: { entities: string[], intentType: "FETCH" | "MODIFY", context?: RequestContext }): Promise<Map<string, any>> {
   // Always use TABLE embeddings for data fetch context, even when the overall task is MODIFY.
   const allMatchedApis = new Map();
   console.log(`🔎 Retrieval mode decision: intentType=${intentType}, always including TABLE/SQL for reads; adding API matches for MODIFY.`);
@@ -136,7 +134,7 @@ export async function getAllMatchedApis({ entities, intentType, apiKey, context 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model: 'text-embedding-ada-002',

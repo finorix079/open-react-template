@@ -6,7 +6,6 @@ import fs from 'fs';
 
 export async function clarifyAndRefineUserInput(
   userInput: string,
-  apiKey: string,
   userToken?: string
 ): Promise<{ 
   refinedQuery: string,
@@ -173,7 +172,6 @@ IntentType: ["FETCH"/"MODIFY"]`;
     : currentQuery;
 
   const content = await openaiChatCompletion({
-    apiKey,
     messages: [
       {
         role: 'system',
@@ -184,7 +182,6 @@ IntentType: ["FETCH"/"MODIFY"]`;
         content: userMessage,
       },
     ],
-    model: 'gpt-4o',
     temperature: 0.5,
     max_tokens: 4096,
   });
@@ -226,7 +223,7 @@ IntentType: ["FETCH"/"MODIFY"]`;
       } catch (err) {
         console.error('Failed to log tasks to file:', err);
       }
-      const match = await selectReferenceTask(refinedQuery, tasks, apiKey, intentType);
+      const match = await selectReferenceTask(refinedQuery, tasks, intentType);
       console.log('Reference task matching result: ', match);
       if (match.task && typeof match.score === 'number') {
         referenceTask = match.task;

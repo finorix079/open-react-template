@@ -5,7 +5,7 @@ import { findApiParameters } from '@/services/apiSchemaLoader';
 import { clarifyAndRefineUserInput, handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
 import { SavedTask } from '@/services/taskService';
 import { sendToPlanner } from './planner';
-import { openaiChatCompletion } from '@/utils/aiHandler';
+import { kimiChatCompletion, openaiChatCompletion } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
 import { ElasticDashSpan, propagateAttributes, startActiveObservation } from "@elasticdash/tracing";
 import { writeFileSync } from 'fs';
@@ -73,8 +73,7 @@ async function detectResolutionVsExecution(
   apiKey: string
 ): Promise<'resolution' | 'execution'> {
   try {
-    const intent = await openaiChatCompletion({
-      apiKey,
+    const intent = await kimiChatCompletion({
       messages: [
         {
           role: 'system',
@@ -104,7 +103,6 @@ Execution Plan: ${JSON.stringify(executionPlan, null, 2)}
 Intent:`,
         },
       ],
-      model: 'gpt-4o',
       temperature: 0.1,
       max_tokens: 10
     });
@@ -149,8 +147,7 @@ async function summarizeMessage(message: Message, apiKey: string): Promise<Messa
   }
 
   try {
-    const summarized = await openaiChatCompletion({
-      apiKey,
+    const summarized = await kimiChatCompletion({
       messages: [
         {
           role: 'system',
@@ -201,7 +198,6 @@ Now summarize this message:`,
           content: message.content,
         },
       ],
-      model: 'gpt-4o',
       temperature: 0.1,
       max_tokens: 1024
     });
@@ -405,7 +401,7 @@ async function runPlannerWithInputs({
   }
   if (!isSqlRetrieval) {
     // 发送到planner（API模式）
-    let planResponse = await sendToPlanner(refinedQuery, apiKey, usefulData, mergedConversationContext, intentType);
+    let planResponse = await sendToPlanner(refinedQuery, usefulData, mergedConversationContext, intentType);
 
     let actionablePlan;
     try {
@@ -479,9 +475,9 @@ async function runPlannerWithInputs({
     // If modify intent returned only resolution phase, force a full-plan retry with MODIFY intent to get both resolution + modification steps
     if (intentType === 'MODIFY' && actionablePlan?.phase === 'resolution' && Array.isArray(entities) && entities.length > 0) {
       console.log('♻️ Plan is resolution-only for MODIFY intent; re-planning with forceFullPlan=true to get complete execution plan (resolution + modification steps)...');
-      const tableMatchedApis = await getAllMatchedApis({ entities, intentType: 'MODIFY', apiKey, context: requestContext });
-      const tableTopK = await getTopKResults(tableMatchedApis, 20);
-      const tablePlanResponse = await sendToPlanner(refinedQuery, apiKey, usefulData, conversationContext, 'MODIFY', true);
+      // const tableMatchedApis = await getAllMatchedApis({ entities, intentType: 'MODIFY', context: requestContext });
+      // const tableTopK = await getTopKResults(tableMatchedApis, 20);
+      const tablePlanResponse = await sendToPlanner(refinedQuery, usefulData, conversationContext, 'MODIFY', true);
       const sanitizedPlanResponse = sanitizePlannerResponse(tablePlanResponse);
       actionablePlan = JSON.parse(sanitizedPlanResponse);
       planResponse = tablePlanResponse;
@@ -521,12 +517,10 @@ IMPORTANT RULES:
 Output:`;
 
     // Call LLM for table selection
-    let tableSelectionText = await openaiChatCompletion({
-      apiKey,
+    let tableSelectionText = await kimiChatCompletion({
       messages: [
         { role: 'system', content: tableSelectionPrompt },
       ],
-      model: 'gpt-4o',
       temperature: 0.3,
       max_tokens: 1024
     });
@@ -584,11 +578,9 @@ SQL:`;
     
     // Call LLM for SQL generation
     let sqlText = await openaiChatCompletion({
-      apiKey,
       messages: [
         { role: 'system', content: sqlPrompt },
       ],
-      model: 'gpt-4o',
       temperature: 0.3,
       max_tokens: 512
     });
@@ -827,57 +819,7 @@ async function resolvePlaceholders(
   }
   
   try {
-//     const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-//       method: 'POST',
-//       headers: {
-//         'Content-Type': 'application/json',
-//         Authorization: `Bearer ${apiKey_local}`,
-//       },
-//       body: JSON.stringify({
-//         model: 'gpt-4o',
-//         messages: [
-//           {
-//             role: 'system',
-//             content: `You are a data extraction expert. Given a previous API response and the current step's requirements, extract the correct value to replace a "resolved_from_step_X" placeholder.
-
-// RULES:
-// 1. Analyze the current step's API call to understand what value is needed
-// 2. Look at the referenced step's response to find the matching data
-// 3. Return ONLY the extracted value (no explanation, no JSON wrapping)
-// 4. Common patterns:
-//    - If current step deletes by ID, extract the "id" field from previous step
-//    - If current step modifies a resource, extract the "id" that identifies that resource
-//    - If previous step returned multiple results, extract the first one's ID
-// 5. If the data cannot be found, return "ERROR: [reason]"
-
-// Current Step Analysis:
-// - API Path: ${stepToExecute.api?.path}
-// - API Method: ${stepToExecute.api?.method}
-// - Parameters: ${JSON.stringify(stepToExecute.api?.parameters || {})}
-// - Request Body: ${JSON.stringify(stepToExecute.api?.requestBody || {})}
-
-// Previous Step (Step ${placeholderStepNum}) Response:
-// ${JSON.stringify(referencedStep.response, null, 2)}
-
-// What value should replace "resolved_from_step_${placeholderStepNum}"? Return ONLY the value:`,
-//           },
-//         ],
-//         temperature: 0.2,
-//         max_tokens: 100,
-//       }),
-//     });
-    
-//     if (!llmResponse.ok) {
-//       const errorText = await llmResponse.text();
-//       console.error('LLM extraction failed:', errorText);
-//       return { resolved: false, reason: `LLM extraction failed: ${errorText}` };
-//     }
-    
-//     const data = await llmResponse.json();
-//     const extractedValue = data.choices[0]?.message?.content?.trim();
-
     const extractedValue = await openaiChatCompletion({
-      apiKey: apiKey_local,
       messages: [
         {
           role: 'system',
@@ -905,7 +847,6 @@ ${JSON.stringify(referencedStep.response, null, 2)}
 What value should replace "resolved_from_step_${placeholderStepNum}"? Return ONLY the value:`,
         },
       ],
-      model: 'gpt-4o',
       temperature: 0.2,
       max_tokens: 100,
     });
@@ -1240,7 +1181,7 @@ const handler = async (request: NextRequest) => {
             ? `Previous context:\n${conversationContext}\n\nCurrent query: ${userMessage.content}`
             : userMessage.content;
 
-          const { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask } = await clarifyAndRefineUserInput(queryWithContext, apiKey, userToken);
+          const { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask } = await clarifyAndRefineUserInput(queryWithContext, userToken);
           // 设置原始finalDeliverable为refinedQuery，保证不被中间依赖覆盖
           if (!finalDeliverable) finalDeliverable = refinedQuery;
           console.log('\n📝 QUERY REFINEMENT RESULTS:');
@@ -1262,7 +1203,7 @@ const handler = async (request: NextRequest) => {
 
 
           // 获取所有实体的匹配API（embedding检索+过滤）
-          const allMatchedApis = await getAllMatchedApis({ entities, intentType, apiKey, context: requestContext });
+          const allMatchedApis = await getAllMatchedApis({ entities, intentType, context: requestContext });
 
           // Convert Map to array and sort by similarity
           let topKResults = await getTopKResults(allMatchedApis, 20);
@@ -1297,56 +1238,8 @@ const handler = async (request: NextRequest) => {
             if (err.message && err.message.includes('No tables selected for SQL generation')) {
               const reason = err.cause || 'No relevant tables found for this query';
               console.log('📝 Generating LLM response for no tables selected error:', reason);
-              
-              // Generate a human-friendly response via LLM
-      //         const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      //           method: 'POST',
-      //           headers: {
-      //             'Content-Type': 'application/json',
-      //             Authorization: `Bearer ${apiKey}`,
-      //           },
-      //           body: JSON.stringify({
-      //             model: 'gpt-4o',
-      //             messages: [
-      //               {
-      //                 role: 'system',
-      //                 content: `You are a helpful assistant. The user asked a question, but the database doesn't have the necessary information to answer it. Politely explain why the database cannot fulfill their request.`
-      //               },
-      //               {
-      //                 role: 'user',
-      //                 content: `User's question: "${refinedQuery}"
-                      
-      // The database schema analysis shows: "${reason}"
-
-      // Please provide a friendly explanation of why this question cannot be answered with the current database.`
-      //               }
-      //             ],
-      //             temperature: 0.7,
-      //             max_tokens: 512,
-      //           }),
-      //         });
-              
-      //         if (response.ok) {
-      //           const data = await response.json();
-      //           const llmMessage = data.choices[0]?.message?.content || reason;
-      //           return NextResponse.json({
-      //             message: llmMessage,
-      //             refinedQuery,
-      //             final: true,
-      //             reason: reason
-      //           });
-      //         } else {
-      //           // Fallback if LLM call fails
-      //           return NextResponse.json({
-      //             message: reason,
-      //             refinedQuery,
-      //             final: true,
-      //             reason: reason
-      //           });
-      //         }
 
               const llmMessage = await openaiChatCompletion({
-                apiKey,
                 messages: [
                   {
                     role: 'system',
@@ -1361,7 +1254,6 @@ const handler = async (request: NextRequest) => {
   Please provide a friendly explanation of why this question cannot be answered with the current database.`
                   }
                 ],
-                model: 'gpt-4o',
                 temperature: 0.7,
                 max_tokens: 512,
               });
@@ -1658,7 +1550,6 @@ async function validateNeedMoreActions(
 //         Authorization: `Bearer ${apiKey}`,
 //       },
 //       body: JSON.stringify({
-//         model: 'gpt-4o',
 //         messages: [
 //           {
 //             role: 'system',
@@ -1913,7 +1804,6 @@ async function validateNeedMoreActions(
 //     const content = data.choices[0]?.message?.content || '';
 
     const content = await openaiChatCompletion({
-      apiKey,
       messages: [
         {
           role: 'system',
@@ -2153,7 +2043,6 @@ IMPORTANT:
 Can we answer the original query with the information we have? Or do we need more API calls?`,
         },
       ],
-      model: 'gpt-4o',
       temperature: 0.3,
       max_tokens: 4096,
     });
@@ -2270,47 +2159,13 @@ usefulData:  {
 ✅ 目标完成验证响应: GOAL_COMPLETED
 🎯 目标已完成，返回结果
 */
-
-    const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('OpenAI API key not configured');
-    }
-
-    // const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     Authorization: `Bearer ${apiKey}`,
-    //   },
-    //   body: JSON.stringify({
-    //     model: 'gpt-4o',
-    //     messages: [
-    //       {
-    //         role: 'system',
-    //         content: prompt,
-    //       },
-    //     ],
-    //     temperature: 0.5,
-    //     max_tokens: 4096,
-    //   }),
-    // });
-
-    // if (!response.ok) {
-    //   console.error('Useful data extraction API request failed:', await response.text());
-    //   return existingUsefulData;
-    // }
-
-    // const data = await response.json();
-    // const extractedData = data.choices[0]?.message?.content?.trim() || existingUsefulData;
-    const extractedData = await openaiChatCompletion({
-      apiKey: apiKey,
+    const extractedData = await kimiChatCompletion({
       messages: [
         {
           role: 'system',
           content: prompt,
         },
       ],
-      model: 'gpt-4o',
       temperature: 0.5,
       max_tokens: 4096,
     });
@@ -2373,7 +2228,6 @@ Use the actual data from the API responses to provide specific, accurate informa
 //         Authorization: `Bearer ${apiKey}`,
 //       },
 //       body: JSON.stringify({
-//         model: 'gpt-4o',
 //         messages: [
 //           {
 //             role: 'system',
@@ -2417,7 +2271,6 @@ Use the actual data from the API responses to provide specific, accurate informa
 
 //     const data = await response.json();
     const message = await openaiChatCompletion({
-      apiKey,
       messages: [
         {
           role: 'system',
@@ -2449,7 +2302,6 @@ IMPORTANT: The data above includes complete arrays. Pay careful attention to:
 Only state facts that are explicitly present in the data. Do not make assumptions about learning methods or other attributes.`,
         },
       ],
-      model: 'gpt-4o',
       temperature: 0.7,
       max_tokens: 2048,
     });
@@ -3111,7 +2963,7 @@ async function executeIterativePlanner(
         console.log('📌 MODIFY flow: All steps executed without errors. Validating goal completion...');
         
         // Get updated planner context with execution results
-        const allMatchedApis = await getAllMatchedApis({ entities, intentType, apiKey, context: requestContext });
+        const allMatchedApis = await getAllMatchedApis({ entities, intentType, context: requestContext });
         let topKResults = await getTopKResults(allMatchedApis, 20);
         const str = serializeUsefulDataInOrder(requestContext);
         
@@ -3186,7 +3038,7 @@ Please generate a NEW PLAN to complete the user's goal. Explain:
 2. What additional actions are needed
 3. The full list of new steps to execute`;
 
-          currentPlanResponse = await sendToPlanner(plannerContext, apiKey, str, conversationContextWithReference, intentType);
+          currentPlanResponse = await sendToPlanner(plannerContext, str, conversationContextWithReference, intentType);
           if (referenceTask) {
             console.log(`🧭 Re-plan (error recovery) kept reference task ${referenceTask.id} (${referenceTask.taskName}).`);
           }
@@ -3201,7 +3053,7 @@ Please generate a NEW PLAN to complete the user's goal. Explain:
         // MODIFY flow encountered an error - trigger re-planning
         console.log('🔄 MODIFY flow error detected. Re-planning with error feedback...');
         
-        const allMatchedApis = await getAllMatchedApis({ entities, intentType, apiKey, context: requestContext });
+        const allMatchedApis = await getAllMatchedApis({ entities, intentType, context: requestContext });
         let topKResults = await getTopKResults(allMatchedApis, 20);
         const str = serializeUsefulDataInOrder(requestContext);
         
@@ -3230,7 +3082,7 @@ Please generate a NEW PLAN that:
 2. Finds an alternative approach to complete the user's goal
 3. Lists all steps needed`;
 
-        currentPlanResponse = await sendToPlanner(plannerContext, apiKey, str, conversationContextWithReference, intentType);
+        currentPlanResponse = await sendToPlanner(plannerContext, str, conversationContextWithReference, intentType);
         if (referenceTask) {
           console.log(`🧭 Re-plan (validator feedback) kept reference task ${referenceTask.id} (${referenceTask.taskName}).`);
         }
@@ -3309,7 +3161,7 @@ Please generate a NEW PLAN that:
         console.log(`⚠️  Validator says more actions needed: ${validationResult.reason}`);
 
         // Send the accumulated context back to the planner for next step
-        const allMatchedApis = await getAllMatchedApis({ entities, intentType, apiKey, context: requestContext });
+        const allMatchedApis = await getAllMatchedApis({ entities, intentType, context: requestContext });
         let topKResults = await getTopKResults(allMatchedApis, 20);
         const str = serializeUsefulDataInOrder(requestContext);
         
@@ -3337,7 +3189,7 @@ IMPORTANT: If the available APIs do not include an endpoint that can provide the
 
 Please generate the next step in the plan, or indicate that no more steps are needed.`;
 
-        currentPlanResponse = await sendToPlanner(plannerContext, apiKey, str, conversationContextWithReference, intentType);
+        currentPlanResponse = await sendToPlanner(plannerContext, str, conversationContextWithReference, intentType);
         actionablePlan = JSON.parse(sanitizePlannerResponse(currentPlanResponse));
         console.log('\n🔄 Generated new plan from validator feedback (FETCH mode)');
       }

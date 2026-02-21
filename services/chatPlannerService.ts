@@ -71,12 +71,10 @@ function findTopKSimilarTable(queryEmbedding: number[], topK: number = 3, contex
 export async function getAllMatchedApis({
   entities,
   intentType,
-  apiKey,
   context,
 }: {
   entities: string[];
   intentType: 'FETCH' | 'MODIFY';
-  apiKey: string;
   context?: RequestContext;
 }): Promise<Map<string, any>> {
   const allMatchedApis = new Map();
@@ -88,7 +86,7 @@ export async function getAllMatchedApis({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${process.env.NEXT_PUBLIC_OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model: 'text-embedding-ada-002',
@@ -419,14 +417,8 @@ export async function resolvePlaceholders(
   console.log(`\n📋 RESOLVING PLACEHOLDER: resolved_from_step_${placeholderStepNum}`);
   console.log(`   Referenced step response:`, JSON.stringify(referencedStep.response, null, 2));
 
-  const apiKey_local = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey_local) {
-    return { resolved: false, reason: 'OpenAI API key not configured' };
-  }
-
   try {
     const extractedValue = await openaiChatCompletion({
-      apiKey: apiKey_local,
       messages: [
         {
           role: 'system',
@@ -454,7 +446,6 @@ ${JSON.stringify(referencedStep.response, null, 2)}
 What value should replace "resolved_from_step_${placeholderStepNum}"? Return ONLY the value:`,
         },
       ],
-      model: 'gpt-4o',
       temperature: 0.2,
       max_tokens: 100,
     });
