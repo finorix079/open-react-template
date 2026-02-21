@@ -87,6 +87,9 @@ importers:
       '@types/pg':
         specifier: ^8.16.0
         version: 8.16.0
+      esmock:
+        specifier: ^2.7.3
+        version: 2.7.3
       postcss:
         specifier: ^8.5.1
         version: 8.5.1
@@ -1123,6 +1126,10 @@ packages:
   escape-string-regexp@5.0.0:
     resolution: {integrity: sha512-/veY75JbMK4j1yjvuUxuVsiS/hr/4iHs9FTT6cgTexxdE0Ly/glccBAkloH/DofkjRbZU3bnoj38mOmhkZ0lHw==}
     engines: {node: '>=12'}
+
+  esmock@2.7.3:
+    resolution: {integrity: sha512-/M/YZOjgyLaVoY6K83pwCsGE1AJQnj4S4GyXLYgi/Y79KL8EeW6WU7Rmjc89UO7jv6ec8+j34rKeWOfiLeEu0A==}
+    engines: {node: '>=14.16.0'}
 
   estree-util-is-identifier-name@3.0.0:
     resolution: {integrity: sha512-hFtqIDZTIUZ9BXLb8y4pYGyk6+wekIivNVTcmvk8NoOh+VeRn5y6cEHzbURrWbfp1fIqdVipilzj+lfaadNZmg==}
@@ -2823,6 +2830,8 @@ snapshots:
   escape-string-regexp@2.0.0: {}
 
   escape-string-regexp@5.0.0: {}
+
+  esmock@2.7.3: {}
 
   estree-util-is-identifier-name@3.0.0: {}
 
