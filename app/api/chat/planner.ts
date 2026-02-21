@@ -37,49 +37,49 @@ export async function sendToPlanner(
         console.log('conversationContext: ', conversationContext);
         console.log('usefulData: ', usefulData);
 
-      const validatorPrompt = `你是一个【目标完成校验器】。
+      const validatorPrompt = `You are a [Goal Completion Validator].
 
-你的唯一职责:  
-**根据「用户目标」和「已有数据」，判断目标是否已经完成。**
+Your sole responsibility:  
+**Determine whether the goal has been completed based on the "User Goal" and "Existing Data".**
 
-你不关心下一步要做什么，也不规划操作。
+You do not care about the next steps or planning actions.
 ${contextInfo}
 --------------------------------
 
-用户目标:
+User Goal:
 ${refinedQuery}
 
-已有数据（最高优先级，真实 API 返回）:
-${usefulData || '无'}
+Existing Data (highest priority, actual API response):
+${usefulData || 'None'}
 
 --------------------------------
 
-判定规则（必须严格遵守）：
+Judgment Rules (must strictly follow):
 
-1. "已有数据" 是可信的唯一事实来源
-2. DELETE / INSERT / UPDATE 本身不代表完成
-3. 只有以下情况才可判定目标完成：
-   - 最近一次【读取语义】结果表明目标已达成
-   - 读取语义包括：
+1. "Existing Data" is the only trustworthy source of facts
+2. DELETE / INSERT / UPDATE actions themselves do not indicate completion
+3. The goal is considered completed only in the following cases:
+   - The most recent [read semantic] result shows the goal is achieved
+   - Read semantics include:
      - GET
      - SELECT
-     - post /general/sql/query（等效 GET）
-4. 如果最后一次读取语义结果明确满足用户目标 → 目标完成
-5. 如果不存在满足目标的读取语义结果 → 目标未完成
+     - post /general/sql/query (equivalent to GET)
+4. If the last read semantic result clearly satisfies the user's goal → Goal completed
+5. If there is no read semantic result that satisfies the goal → Goal not completed
 
 --------------------------------
 
-输出要求（必须严格匹配）：
+Output requirements (must strictly match):
 
-- 如果目标已完成，仅输出：
+- If the goal is completed, output only:
 GOAL_COMPLETED
 
-- 如果目标未完成，仅输出：
+- If the goal is not completed, output only:
 GOAL_NOT_COMPLETED
 
-不允许输出任何解释或多余文字。
+Do not output any explanations or extra text.
 
-请开始判断：`;
+Begin judgment:`;
 
       console.log('📊 Step 0: 验证目标完成情况...');
 
@@ -107,40 +107,40 @@ GOAL_NOT_COMPLETED
       let intentType = planIntentType || 'FETCH';
 
       if (!planIntentType) {
-        const nextActionPrompt = `你是 API 自动化系统的【下一步操作规划器】。
+        const nextActionPrompt = `You are the [Next Step Planner] for an API automation system.
 
-你的前提条件是:  
-**用户目标尚未完成。**
+Your premise:  
+**The user's goal has NOT been completed.**
 ${contextInfo}
 --------------------------------
 
-用户目标:
+User Goal:
 ${refinedQuery}
 
-已有数据（真实 API 返回）:
-${usefulData || '无'}
+Existing Data (actual API response):
+${usefulData || 'None'}
 
 --------------------------------
 
-你的任务：
+Your task:
 
-1. 始终以【完成用户原始目标】为唯一终点
-2. 分析已有数据，判断距离目标还缺少什么
-3. 决定【最关键的单个操作】（不要规划多步）
-4. 用一句话描述该操作，包含关键实体和动作
-5. 不要判断目标是否完成（这已经在上一步完成）
+1. Always treat [completing the user's original goal] as the only endpoint
+2. Analyze the existing data and determine what is still missing to reach the goal
+3. Decide the [single most critical action] (do NOT plan multiple steps)
+4. Describe this action in one sentence, including key entities and actions
+5. Do NOT judge whether the goal is completed (this was already handled in the previous step)
 
 --------------------------------
 
-输出格式（必须严格匹配）：
+Output format (must strictly match):
 
 { 
-  "description": "一句话描述操作意图", 
+  "description": "One-sentence description of the action intent", 
   "type": "FETCH" | "MODIFY" 
 }
 
-不允许输出任何解释或多余文字。
-请开始规划：`;
+Do NOT output any explanations or extra text.
+Begin planning:`;
 
         // ==================== STEP 1: LLM 分析下一步意图 ====================
         console.log('📊 Step 1: 分析下一步意图...');
@@ -275,7 +275,7 @@ ${usefulData || '无'}
 
     Available Resources (Tables only): ${ragApiDesc}
 
-    Useful Data: ${usefulData || '无'}
+    Useful Data: ${usefulData || 'None'}
 
     IMPORTANT: Execute ONLY the "Next Step Intent" above using SQL queries.`;
 
