@@ -49,6 +49,16 @@ aiTest('[EXPECTED FAIL] sendToPlanner: RAG retrieves table-user_accounts', async
   })
 })
 
+aiTest('[EXPECTED SUCCESS] sendToPlanner: RAG retrieves table-pokemon_stats', async (ctx) => {
+  await sendToPlanner(PIKACHU_ATTACK_QUERY, '', '', 'FETCH', false)
+
+  expect(ctx.trace).toHavePromptWhere({
+    filterContains: 'SQL/schema validator',
+    requireContains: 'table-pokemon_stats', // ← CORRECT: related table, expected in RAG results
+    nth: 1,
+  })
+})
+
 // ─── FAIL 3: Wrong needs_clarification value ─────────────────────────────────────
 /**
  * WHY IT FAILS: A well-formed query with sufficient schema coverage always
