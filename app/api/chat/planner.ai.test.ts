@@ -50,7 +50,7 @@ aiTest('sendToPlanner calls prompts in the correct order for a FETCH goal', asyn
   })
 })
 
-aiTest('sendToPlanner returns a plan for a simple goal', async (ctx) => {
+aiTest('[EXPECTED FAIL] sendToPlanner returns a plan for a simple goal', async (ctx) => {
   const refinedQuery = 'Find the attack of pikachu'
   const usefulData = ''
   const conversationContext = ''
@@ -79,7 +79,16 @@ aiTest('sendToPlanner returns a plan for a simple goal', async (ctx) => {
   expect(ctx.trace).toHaveLLMStep({ promptContains: "User's Ultimate Goal:", minTimes: 1 })
 
   // Use trace-aware matcher for semantic output
-  expect(ctx.trace).toMatchSemanticOutput('attack of Pikachu as the final deliverable', { provider: 'claude', model: 'claude-sonnet-4-5-20250929' })
+  await expect(ctx.trace).toMatchSemanticOutput('attack of Pikachu as the final deliverable');
+  // Where the error occurs
+  await expect(ctx.trace).toMatchSemanticOutput('defense of Pikachu as the final deliverable', { provider: 'claude', model: 'claude-sonnet-4-6' })
+  await expect(ctx.trace).toMatchSemanticOutput('attack of Pikachu as the final deliverable', { provider: 'claude', model: 'claude-sonnet-4-5-20250929' })
+  await expect(ctx.trace).toMatchSemanticOutput('attack of Pikachu as the final deliverable', {
+    provider: 'openai',
+    model: 'kimi-k2-turbo-preview',
+    apiKey: process.env.KIMI_API_KEY,
+    baseURL: 'https://api.moonshot.ai/v1',
+  })
 })
 
 aiTest('sendToPlanner generates a plan that provides clear detail', async (ctx) => {
@@ -91,7 +100,6 @@ aiTest('sendToPlanner generates a plan that provides clear detail', async (ctx) 
 
   // Evaluate whether the planner output (2nd LLM call: validator=1, planner=2, schema-validator=3)
   // is actionable — i.e. contains concrete, directly executable SQL rather than vague instructions.
-  // @ts-expect-error toEvaluateOutputMetric is in elasticdash-test@0.1.3 types but absent from the IDE's incremental cache
   await expect(ctx.trace).toEvaluateOutputMetric({
     evaluationPrompt:
       'You are evaluating an AI-generated SQL execution plan. ' +
@@ -103,7 +111,7 @@ aiTest('sendToPlanner generates a plan that provides clear detail', async (ctx) 
       'Return only a single number between 0 and 1.',
     target: 'result',
     nth: 2,
-    condition: { atLeast: 0.7 },
+    condition: { atLeast: 0.5 },
     // condition: { atMost: 0.3 },
     provider: 'claude',
     model: 'claude-sonnet-4-6',

@@ -18,8 +18,8 @@ export async function sendToPlanner(
   planIntentType?: 'FETCH' | 'MODIFY',
   forceFullPlan?: boolean
 ): Promise<string> {
-  console.log('🚀 Planner 自主工作流程启动');
-  console.log('📌 忽略传入的 apis 参数，使用自主 RAG 检索');
+  console.log('🚀 Planner autonomous workflow started');
+  console.log('📌 Ignoring incoming apis parameter, using autonomous RAG retrieval');
 
   let retryCount = 0;
   const maxRetries = 3;
@@ -80,17 +80,17 @@ Do not output any explanations or extra text.
 
 Begin judgment:`;
 
-      console.log('📊 Step 0: 验证目标完成情况...');
+      console.log('📊 Step 0: Validating goal completion...');
 
       const validatorText = await openaiChatCompletion({
         messages: [{ role: 'user', content: validatorPrompt }],
         temperature: 0.0,
         max_tokens: 256,
       });
-      console.log('✅ 目标完成验证响应:', validatorText);
+      console.log('✅ Goal completion validation response:', validatorText);
 
       if (validatorText === 'GOAL_COMPLETED') {
-        console.log('🎯 目标已完成，返回结果');
+        console.log('🎯 Goal completed, returning result');
         return JSON.stringify({
           needs_clarification: false,
           execution_plan: [],
@@ -189,7 +189,7 @@ Begin planning:`;
       }
 
       // ==================== STEP 2: RAG 检索相关 API 和 Table ====================
-      console.log('🔍 Step 2: RAG 检索相关 API 和 Table...');
+      console.log('🔍 Step 2: RAG retrieving relevant APIs and Tables...');
       let ragApis: any[] = [];
       try {
         // For MODIFY intents: retrieve both tables and APIs
@@ -198,7 +198,7 @@ Begin planning:`;
           console.log('📊 MODIFY intent: retrieving both TABLE and API resources...');
           const allMatchedApis = await getAllMatchedApis({ entities: [nextIntent], intentType: 'MODIFY' });
           ragApis = await getTopKResults(allMatchedApis, 20);
-          console.log(`✅ 检索到 ${ragApis.length} 个相关资源 (tables + APIs)`);
+          console.log(`✅ Retrieved ${ragApis.length} relevant resources (tables + APIs)`);
         } else {
           console.log('📊 FETCH intent: retrieving only TABLE resources...');
           const allMatchedApis = await getAllMatchedApis({ entities: [nextIntent], intentType: 'FETCH' });
@@ -207,15 +207,15 @@ Begin planning:`;
           ragApis = allResults.filter((item: any) => 
             item.id && typeof item.id === 'string' && (item.id.startsWith('table-') || item.id === 'sql-query')
           );
-          console.log(`✅ 检索到 ${ragApis.length} 个相关表结构 (tables only)`);
+          console.log(`✅ Retrieved ${ragApis.length} relevant table schemas (tables only)`);
         }
       } catch (e) {
-        console.warn('⚠️ RAG 检索失败:', e);
+        console.warn('⚠️ RAG retrieval failed:', e);
         ragApis = [];
       }
 
       if (ragApis.length === 0) {
-        console.warn('⚠️ 未找到相关资源，无法生成执行计划');
+        console.warn('⚠️ No relevant resources found, unable to generate execution plan');
         const sorryMessage = `I'm sorry, but there are no relevant ${intentType === 'MODIFY' ? 'APIs, tables, or columns' : 'tables or columns'} in the database schema that can provide information about "${refinedQuery}". Therefore, I am unable to generate a ${intentType === 'MODIFY' ? 'plan or API call' : 'SQL query'} for this request.`;
         return JSON.stringify({
           impossible: true,
@@ -231,7 +231,7 @@ Begin planning:`;
       const ragApiDesc = JSON.stringify(ragApis, null, 2);
 
       // ==================== STEP 3: LLM 生成执行计划 ====================
-      console.log('📝 Step 3: 生成执行计划...');
+      console.log('📝 Step 3: Generating Execution Plan...');
 
       const plannerSystemPrompt = await fetchPromptFile(intentType === 'FETCH' ? 'prompt-planner-table.txt' : 'prompt-planner.txt');
 
@@ -293,14 +293,14 @@ Begin planning:`;
         throw new Error('Invalid planner response format.');
       }
 
-      console.log('✅ 原始 Planner 响应:', plannerResponse);
+      console.log('✅ Original Planner Response:', plannerResponse);
 
       let retryNeeded = true;
 
       let validationAttempts = 0;
       while (retryNeeded && validationAttempts < 2) {
         validationAttempts++;
-        // 让LLM自检SQL与schema一致性
+        // Let the LLM self-validate SQL and schema consistency
         const validationPrompt = `
 You are a SQL/schema validator. 
 Your job is to check if the SQL query references tables and columns that exist in the provided table schemas.
@@ -349,7 +349,7 @@ Output:
           retryNeeded = false;
         } else {
           // 校验通过，保留原始plannerResponse（包含execution_plan），不覆盖
-          console.log('✅ SQL/schema校验通过，保留原始plan');
+          console.log('✅ SQL/schema validation passed, keeping original execution plan');
           retryNeeded = false;
         }
       }
@@ -430,7 +430,7 @@ If intent is MODIFY, return the full remaining execution_plan (all steps, ordere
       }
 
       // 最终返回
-      console.log('🎯 最终执行计划已生成: ' + plannerResponse);
+      console.log('🎯 Final Executionable Plan generated: ' + plannerResponse);
       lastPlannerResponse = plannerResponse;
       return plannerResponse;
 
