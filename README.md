@@ -125,3 +125,5 @@ Make sure your OpenAPI Doc are ready in `src/doc/openapi-doc` before doing this.
 ```
 npx ts-node src/scripts/vectorize-openapi.ts
 ```
+
+If things goes wrong, switch back to branch 'js-agentic-flow-backup' to abort all current changes.
