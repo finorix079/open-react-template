@@ -7,7 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { clarifyAndRefineUserInput, handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
 import { openaiChatCompletion } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
-import { ElasticDashSpan, propagateAttributes, startActiveObservation } from "@elasticdash/tracing";
+// import { ElasticDashSpan, propagateAttributes, startActiveObservation } from "@elasticdash/tracing";
+import { LangfuseSpan, propagateAttributes, startActiveObservation } from "@langfuse/tracing";
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
 
@@ -59,7 +60,7 @@ const handler = async (request: NextRequest) => {
 
   let usefulData = new Map();
   let finalDeliverable = '';
-  // let parent: ElasticDashSpan | null = null;
+  // let parent: LangfuseSpan | null = null;
   let output: any = null;
   let requestBody: any = null;
   try {
@@ -98,7 +99,7 @@ const handler = async (request: NextRequest) => {
   //   sessionId: clientSessionId 
   // });
 
-  return startActiveObservation("handleChatRequest", async (span: ElasticDashSpan) => {
+  return startActiveObservation("handleChatRequest", async (span: LangfuseSpan) => {
     span.updateTrace({ 
       sessionId: clientSessionId,
       metadata: { 

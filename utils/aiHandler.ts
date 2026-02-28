@@ -1,12 +1,14 @@
 import OpenAI from 'openai';
 import { NodeSDK } from "@opentelemetry/sdk-node";
-import { observeOpenAI } from "@elasticdash/openai";
-import { ElasticDashSpanProcessor } from "@elasticdash/otel";
+// import { observeOpenAI } from "@elasticdash/openai";
+// import { ElasticDashSpanProcessor } from "@elasticdash/otel";
+import { observeOpenAI } from "@langfuse/openai";
+import { LangfuseSpanProcessor } from "@langfuse/otel";
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 
 const sdk = new NodeSDK({
-    spanProcessors: [new ElasticDashSpanProcessor()],
+    spanProcessors: [new LangfuseSpanProcessor()],
 });
  
 sdk.start();
