@@ -16,7 +16,13 @@ const vectorizedDataTable = JSON.parse(fs.readFileSync(vectorizedDataTablePath, 
 const vectorizedDataApi = JSON.parse(fs.readFileSync(vectorizedDataApiPath, 'utf-8'));
 
 // Function to find the top-k most similar API vectors
-function findTopKSimilarApi(queryEmbedding: number[], topK: number = 3, context?: RequestContext) {
+export interface TopKSimilarApiInput {
+  queryEmbedding: number[];
+  topK?: number;
+  context?: RequestContext;
+}
+
+export function findTopKSimilarApi({ queryEmbedding, topK = 3, context }: TopKSimilarApiInput) {
   return vectorizedDataApi
     .map((item: any) => {
       let tags: string[] = item.tags || [];
@@ -160,7 +166,7 @@ export async function getAllMatchedApis({ entities, intentType, context }: { ent
 
     if (intentType === 'MODIFY') {
       // API retrieval remains available (needed for mutation steps)
-      const apiResults = findTopKSimilarApi(entityEmbedding, 10, context);
+      const apiResults = findTopKSimilarApi({queryEmbedding: entityEmbedding as number[], topK: 10, context: context as any});
       console.log(`Found ${apiResults.length} APIs for entity "${entity}"`);
       // console.log(`Found ${apiResults.length} APIs for entity "${entity}":`,
       //   apiResults.map((item: any) => ({ id: item.id, similarity: item.similarity.toFixed(3) }))

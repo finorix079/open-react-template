@@ -127,3 +127,30 @@ npx ts-node src/scripts/vectorize-openapi.ts
 ```
 
 If things goes wrong, switch back to branch 'js-agentic-flow-backup' to abort all current changes.
+
+---
+
+## Agentic Flow System
+
+This project includes a custom agentic flow orchestration system for AI workflows. Agents autonomously select and apply tools (APIs, functions, services) to achieve subgoals, enabling flexible, composable, and scalable automation.
+
+### Purpose
+- Modularize AI workflows into agentic flows
+- Enable agents to plan, select tools, and execute tasks
+- Support extension with new tools and agent logic
+
+### Usage
+- See `utils/aiHandler.ts` for agentic interfaces and orchestration logic
+- Define agent plans and tasks using the provided interfaces
+- Add new tools by implementing the `AgentTool` interface
+- Run agentic flows with `runAgenticFlow(plan)`
+
+### Extension Points
+- Add new tools in `services/` or `utils/` and implement `AgentTool`
+- Extend agent planning and orchestration logic in `aiHandler.ts`
+- Add new agentic flow configs in your business logic
+
+### Testing
+- Unit tests for agentic orchestration are in `test/aiHandler.agentic.test.ts`
+
+---

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "next lint",
-    "test:ai": "NODE_OPTIONS='--import tsx/esm' elasticdash test"
+    "test:ai": "NODE_OPTIONS='--import tsx/esm' elasticdash test",
+    "dashboard:ai": "NODE_OPTIONS='--import tsx/esm' elasticdash dashboard"
   },
   "dependencies": {
     "@elasticdash/openai": "^0.0.10",
@@ -24,7 +25,7 @@
     "aos": "3.0.0-beta.6",
     "axios": "^1.13.2",
     "dotenv": "^17.2.3",
-    "elasticdash-test": "^0.1.7",
+    "elasticdash-test": "^0.1.11-alpha-1",
     "jaison": "^2.0.2",
     "next": "15.1.11",
     "openai": "^6.16.0",

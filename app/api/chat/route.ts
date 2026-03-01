@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { clarifyAndRefineUserInput, handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
-import { openaiChatCompletion } from '@/utils/aiHandler';
+import { agentTools, openaiChatCompletion } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
 // import { ElasticDashSpan, propagateAttributes, startActiveObservation } from "@elasticdash/tracing";
 import { LangfuseSpan, propagateAttributes, startActiveObservation } from "@langfuse/tracing";
@@ -22,7 +22,6 @@ import {
   summarizeMessage,
   summarizeMessages,
   filterPlanMessages,
-  detectEntityName,
 } from './messageUtils';
 
 // Validators
@@ -33,6 +32,8 @@ import { runPlannerWithInputs } from './plannerUtils';
 
 // Executor
 import { generateFinalAnswer, executeIterativePlanner } from './executor';
+
+import { planningAgent, executorAgent } from '@/utils/aiHandler';
 
 const handler = async (request: NextRequest) => {
   // Create request-local context to prevent race conditions
@@ -98,6 +99,8 @@ const handler = async (request: NextRequest) => {
   // parent.updateTrace({ 
   //   sessionId: clientSessionId 
   // });
+
+  // return tracer.startActiveSpan("handleChatRequest", async (span: Span) => {
 
   return startActiveObservation("handleChatRequest", async (span: LangfuseSpan) => {
     span.updateTrace({ 
@@ -355,11 +358,25 @@ const handler = async (request: NextRequest) => {
           // Serialize useful data in chronological order (earliest first)
           const str = serializeUsefulDataInOrder(requestContext);
 
-          // 调用独立planner函数 (Phase 1: Always with APIs first)
+          // --- Planning Phase ---
           const planningStart = Date.now();
           let actionablePlan;
           let plannerRawResponse;
 
+          // Use planningAgent for planning trace (optional, can be extended for more planning steps)
+          planningAgent.plan.tasks = [
+            {
+              id: '1',
+              description: 'Generate execution plan',
+              tool: agentTools['queryRefinement'],
+              input: { userInput: refinedQuery, userToken },
+              status: 'pending',
+            },
+          ];
+          // Run planning agent (trace will show planning phase)
+          await planningAgent.run(span);
+
+          // --- Actual Plan Generation ---
           try {
             const plannerResult = await runPlannerWithInputs({
               topKResults,
@@ -495,124 +512,98 @@ const handler = async (request: NextRequest) => {
             return output;
           }
 
+          console.log('checkpoint 1');
+
           // Execute the plan iteratively if execution_plan exists
-          if (actionablePlan.execution_plan && actionablePlan.execution_plan.length > 0) {
-            // All plans require user approval before execution
-            console.log('📋 Plan generated, storing for user approval...');
-            
-            pendingPlans.set(sessionId, {
-              plan: actionablePlan,
-              planResponse,
-              refinedQuery,
-              topKResults,
-              conversationContext,
-              finalDeliverable,
-              entities,
-              intentType,
-              timestamp: Date.now(),
-              referenceTask
-            });
+          if (actionablePlan && Array.isArray(actionablePlan.execution_plan)) {
 
-            // Format plan for user review
-            const planSummary = {
-              goal: refinedQuery,
-              phase: actionablePlan.phase,
-              steps: actionablePlan.execution_plan.map((step: any) => ({
-                step_number: step.step_number,
-                description: step.description,
-                api: `${step.api.method.toUpperCase()} ${step.api.path}`,
-                parameters: step.api.parameters || {},
-                requestBody: step.api.requestBody || {}
-              })),
-              selected_apis: actionablePlan.selected_tools_spec || []
-            };
+            console.log('checkpoint 2');
+            if (actionablePlan.execution_plan.length === 0) {
+              output = {
+                message: 'Plan does not include an execution plan.',
+                refinedQuery,
+                topKResults,
+                planResponse,
+                planningDurationMs,
+                usedReferencePlan: actionablePlan._from_reference_task || false
+              };
+              return output;
+            }
+            console.log('checkpoint 3');
+            // Convert execution_plan steps to AgentTask objects with correct tool mapping
+            executorAgent.plan.tasks = actionablePlan.execution_plan.map((step: any, idx: number) => {
+              // Map API path/method to toolName
+              let toolName = '';
+              let inputPayload: any = step.api.requestBody || {};
 
-            console.log('📤 Returning plan for user approval.');
-
-            // Create a human-readable summary for business operators
-            const entityNameForSummary = detectEntityName(refinedQuery) || 'the item you mentioned';
-            const humanReadableSteps = actionablePlan.execution_plan.map((step: any, index: number) => {
-              // Extract meaningful description from step
-              const stepDesc = step.description || `Execute step ${step.step_number}`;
-              const apiPath = step.api.path || '';
-              const apiMethod = step.api.method?.toUpperCase() || 'API CALL';
-              
-              // Create a simple business-friendly explanation using refined intent context
-              let businessExplanation = stepDesc;
-              
-              if (apiPath.includes('watchlist')) {
-                if (apiMethod === 'DELETE') businessExplanation = `Remove ${entityNameForSummary} from your watchlist`;
-                else if (apiMethod === 'POST') businessExplanation = `Add ${entityNameForSummary} to your watchlist`;
-                else if (apiMethod === 'GET') businessExplanation = 'See your watchlist';
-              } else if (apiPath.includes('teams')) {
-                if (apiMethod === 'DELETE') businessExplanation = `Delete the team for ${entityNameForSummary}`;
-                else if (apiMethod === 'POST') businessExplanation = `Create or update a team involving ${entityNameForSummary}`;
-                else if (apiMethod === 'GET') businessExplanation = 'Get team details';
-              } else if (apiPath.includes('/general/sql/query')) {
-                // SQL queries: make it intent-aware and natural
-                businessExplanation = `Look up information about ${entityNameForSummary}`;
-              } else if (apiPath.includes('search') || apiPath.includes('/pokemon/')) {
-                businessExplanation = `Search details for ${entityNameForSummary}`;
+              // SQL query execution
+              if (step.api.path === '/general/sql/query' && step.api.method === 'post') {
+                toolName = 'dataService';
               }
-              
-              return `**Step ${index + 1}:** ${businessExplanation}\n   *(Technical: ${apiMethod} ${apiPath})*`;
-            }).join('\n\n');
 
-            const humanReadableMessage = `## 📋 Execution Plan
+              // Watchlist operations
+              if (step.api.path === '/pokemon/watchlist') {
+                toolName = 'watchlistService';
+                if (step.api.method === 'post') {
+                  inputPayload = { action: 'add', payload: step.api.requestBody, userToken };
+                } else if (step.api.method === 'delete') {
+                  inputPayload = { action: 'remove', payload: step.api.requestBody, userToken };
+                } else if (step.api.method === 'get') {
+                  inputPayload = { action: 'list', userToken };
+                }
+              }
 
-          **Reference Task Used:** ${actionablePlan._from_reference_task ? 'Yes (reused saved plan)' : 'No (new plan)'}
+              // Add more mappings as needed for other APIs
+              if (!toolName) {
+                throw new Error(`No tool mapping found for API path: ${step.api.path}, method: ${step.api.method}`);
+              }
+              return {
+                id: String(idx + 1),
+                description: step.description,
+                tool: agentTools[toolName],
+                input: inputPayload,
+                status: "pending"
+              };
+            });
+            console.log('checkpoint 4');
+            // Run the executor agent, passing the Langfuse span as parent observation
+            await executorAgent.run(span);
+            console.log('checkpoint 5');
 
-      ${actionablePlan._replanned ? `
-      ## ⚠️ Plan Updated
+            // Build response from executed task outputs
+            const executedTasks = executorAgent.plan.tasks;
+            const firstOutput = executedTasks[0]?.output;
 
-      **Why the plan was regenerated:**
-      ${actionablePlan._replan_reason}
+            console.log('checkpoint 6');
 
-      **What changed:**
-      The plan now includes complete execution steps with both lookup and modification operations to fulfill your request.
-
-      ---
-
-      ` : ''}**What You're About To Do:**
-      ${refinedQuery}
-
-      **Action Breakdown:**
-      ${humanReadableSteps}
-
-      **Phase:** ${actionablePlan.phase.charAt(0).toUpperCase() + actionablePlan.phase.slice(1)} (${actionablePlan.phase === 'resolution' ? 'checking current state' : 'performing changes'})
-
-      ---
-
-      ## ✅ Next Steps
-      **Please review the plan above:**
-      - Reply with **"approve"** to proceed with the execution
-      - Reply with **"no"** or **"reject"** to cancel
-      - Or provide **specific feedback** if you'd like any adjustments
-
-      **Technical Details:**
-      ${actionablePlan.execution_plan.map((step: any) => `
-      **Step ${step.step_number}:** ${step.description}
-      \`\`\`
-      ${step.api.method.toUpperCase()} ${step.api.path}
-      \`\`\`
-      ${step.api.parameters && Object.keys(step.api.parameters).length > 0 ? `Parameters: \`\`\`json\n${JSON.stringify(step.api.parameters, null, 2)}\n\`\`\`` : ''}
-      ${step.api.requestBody && Object.keys(step.api.requestBody).length > 0 ? `Body: \`\`\`json\n${JSON.stringify(step.api.requestBody, null, 2)}\n\`\`\`` : ''}
-      `).join('\n')}`;
+            let messageContent: string | undefined;
+            if (Array.isArray(firstOutput) && firstOutput.length > 0) {
+              const row = firstOutput[0];
+              // Prefer the first primitive value in the row for a concise answer
+              const firstValue = row && typeof row === 'object'
+                ? Object.values(row).find((v) => ['string', 'number', 'boolean'].includes(typeof v))
+                : undefined;
+              if (firstValue !== undefined) {
+                messageContent = String(firstValue);
+              }
+            }
+            if (!messageContent) {
+              messageContent = typeof firstOutput === 'string'
+                ? firstOutput
+                : JSON.stringify(firstOutput ?? {});
+            }
 
             output = {
-              message: humanReadableMessage,
-              planSummary,
-              awaitingApproval: true,
+              message: messageContent,
               refinedQuery,
-              sessionId,
+              topKResults,
               planResponse,
               planningDurationMs,
-              usedReferencePlan: actionablePlan._from_reference_task || false
+              usedReferencePlan: actionablePlan._from_reference_task || false,
+              executedTasks,
             };
-
             return output;
           }
-
           // 如果plan为GOAL_COMPLETED或无execution_plan，自动进入final answer生成
           if (
             actionablePlan &&
@@ -639,6 +630,7 @@ const handler = async (request: NextRequest) => {
             return output;
           }
           // 否则返回plan does not include an execution plan
+          console.log('⚠️ Plan does not include an execution plan, returning plan response without execution');
           output = {
             message: 'Plan does not include an execution plan.',
             refinedQuery,

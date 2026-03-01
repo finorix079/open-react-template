@@ -4,7 +4,7 @@
  * SQL generation, placeholder resolution, and JSON sanitization.
  */
 const jaison = require('jaison');
-import { getAllMatchedApis, getTopKResults, RequestContext } from '@/services/chatPlannerService';
+import { RequestContext } from '@/services/chatPlannerService';
 import { kimiChatCompletion, openaiChatCompletion } from '@/utils/aiHandler';
 import { SavedTask } from '@/services/taskService';
 import { sendToPlanner } from './planner';
