@@ -13,6 +13,7 @@ import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { LangfuseObservation, LangfuseSpan, LangfuseTool } from "@langfuse/tracing";
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { RequestContext } from '@/services/chatPlannerService';
+import { isRecordingSession, recordToolCallManual } from 'elasticdash-test';
 
 async function executeWithObservation(
   parentObs: LangfuseObservation,
@@ -27,6 +28,17 @@ async function executeWithObservation(
     const output = await fn();
     toolObs.update({ output });
     toolObs.end();
+
+	if (isRecordingSession()) {
+		// Only record when in a validation/test run
+		const captured = recordToolCallManual(toolName, input, output);
+
+		console.log(`Recorded tool call: ${toolName}`, { captured });
+	}
+	else {
+		console.log('Not a recorded tool call')
+	}
+
     return output;
   } catch (err) {
     toolObs
@@ -35,6 +47,22 @@ async function executeWithObservation(
 		statusMessage: (err as Error).message,
 	})
 	.end();
+
+
+	if (isRecordingSession()) {
+		// Only record when in a validation/test run
+		const captured = recordToolCallManual(toolName, input, err);
+
+		console.log(`Recorded tool call: ${toolName}`, { captured });
+	}
+	else {
+		console.log('Not a recorded tool call')
+	}
+
+	console.log(`Recorded tool call with error: ${toolName}`, {
+		error: err instanceof Error ? err.message : String(err),
+		stack: err instanceof Error ? err.stack : undefined
+	});
     throw err;
   }
 }
@@ -88,8 +116,8 @@ export const agentTools: Record<string, AgentTool> = {
 	taskSelectorService: {
 		name: "taskSelectorService",
 		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
-			const { queryEmbedding, topK, context } = input as { queryEmbedding: number[]; topK?: number; context?: unknown };
 			return executeWithObservation(parentObs, "taskSelectorService", input, async () => {
+				const { queryEmbedding, topK, context } = input as { queryEmbedding: number[]; topK?: number; context?: unknown };
 				return await findTopKSimilarApi({ queryEmbedding, topK, context: context as (RequestContext | undefined) });
 			});
 		},
@@ -111,12 +139,12 @@ export const agentTools: Record<string, AgentTool> = {
 
 // --- Named Agent Example ---
 /**
- * Planning Agent: Responsible for generating and refining plans.
+ * Planner Agent: Responsible for generating and refining plans.
  * Shares tool set but only uses planning-related tools.
  */
-export const planningAgent: Agent = {
+export const plannerAgent: Agent = {
 	id: "planning-agent-001",
-	name: "PlanningAgent",
+	name: "plannerAgent",
 	plan: {
 		goal: "Generate and refine execution plans",
 		tasks: [],
@@ -160,10 +188,10 @@ export const planningAgent: Agent = {
 				await this.executeTask(task, rootSpan);
 				apiCallCount++;
 			}
-			if (apiCallCount < API_CALL_LIMIT) {
-				rootSpan.update({ output: this.plan });
-				rootSpan.end();
-			}
+			// if (apiCallCount < API_CALL_LIMIT) {
+			// 	rootSpan.update({ output: this.plan });
+			// 	rootSpan.end();
+			// }
 			return this.plan;
 		} catch (err) {
 			rootSpan.update({
@@ -230,9 +258,9 @@ export const executorAgent: Agent = {
 				apiCallCount++;
 			}
 			if (apiCallCount < API_CALL_LIMIT) {
-				rootSpan.update({ output: this.plan });
+				// rootSpan.update({ output: this.plan });
 				console.log('ExecutorAgent completed all tasks within API call limit');
-				rootSpan.end();
+				// rootSpan.end();
 			}
 			return this.plan;
 		} catch (err) {

@@ -2,17 +2,17 @@
 
 ## Overview
 This project uses a dual-agent architecture for agentic orchestration:
-- **PlanningAgent**: Responsible for generating and refining execution plans.
+- **plannerAgent**: Responsible for generating and refining execution plans.
 - **ExecutorAgent**: Responsible for executing plan steps using available tools.
 
 Both agents share a common tool set but have distinct responsibilities and traces.
 
 ## Flow
 1. **Planning Phase**
-   - PlanningAgent receives the user query and context.
-   - PlanningAgent generates an execution plan (traced separately).
+   - plannerAgent receives the user query and context.
+   - plannerAgent generates an execution plan (traced separately).
 2. **Execution Phase**
-   - ExecutorAgent receives the actionable plan from PlanningAgent.
+   - ExecutorAgent receives the actionable plan from plannerAgent.
    - ExecutorAgent executes each step using the appropriate tool (traced separately).
 
 ## Benefits
@@ -21,12 +21,12 @@ Both agents share a common tool set but have distinct responsibilities and trace
 - Easier extensibility for future agentic phases.
 
 ## Key Files
-- `utils/aiHandler.ts`: Defines PlanningAgent and ExecutorAgent.
+- `utils/aiHandler.ts`: Defines plannerAgent and ExecutorAgent.
 - `app/api/chat/route.ts`: Orchestrates planning and execution phases.
 - `app/api/chat/plannerUtils.ts`: Ensures planner output is compatible with agent handoff.
 
 ## Example Trace
-- PlanningAgent trace: Plan generation, query refinement, context analysis.
+- plannerAgent trace: Plan generation, query refinement, context analysis.
 - ExecutorAgent trace: Step execution, tool invocation, result aggregation.
 
 ## Error Handling

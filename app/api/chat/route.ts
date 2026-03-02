@@ -33,15 +33,10 @@ import { runPlannerWithInputs } from './plannerUtils';
 // Executor
 import { generateFinalAnswer, executeIterativePlanner } from './executor';
 
-import { planningAgent, executorAgent } from '@/utils/aiHandler';
+import { plannerAgent, executorAgent } from '@/utils/aiHandler';
 
-const handler = async (request: NextRequest) => {
+const chatHandlerWrapper = async (request: NextRequest) => {
   // Create request-local context to prevent race conditions
-  const requestContext: RequestContext = {
-    ragEntity: undefined,
-    flatUsefulDataMap: new Map(),
-    usefulDataArray: []
-  };
 
   let testCaseId = request.headers.get('x-reset-test-case') || '';
   let testCaseRunRecordId = request.headers.get('x-reset-test-case-run-record') || '';
@@ -59,10 +54,6 @@ const handler = async (request: NextRequest) => {
 
   logTestCaseHeadersToRoot(request.headers);
 
-  let usefulData = new Map();
-  let finalDeliverable = '';
-  // let parent: LangfuseSpan | null = null;
-  let output: any = null;
   let requestBody: any = null;
   try {
     let rawBody: string | undefined;
@@ -90,23 +81,58 @@ const handler = async (request: NextRequest) => {
     console.error('Failed to parse request body as JSON:', err);
     return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
   }
-  const { messages, sessionId: clientSessionId, isApproval: clientIsApproval } = requestBody;
 
-  // parent = startObservation('Customer Chat Request', {
-  //   input: { messages },
-  //   metadata: { sessionId: clientSessionId, name: 'Customer Chat Request' }
-  // });
-  // parent.updateTrace({ 
-  //   sessionId: clientSessionId 
-  // });
+  // Extract user token from Authorization header (optional)
+  const authHeader = request.headers.get('Authorization') || '';
+  const userToken = authHeader.startsWith('Bearer ') ? authHeader.replace('Bearer ', '') : '';
+  // console.log('userToken:', userToken);
 
-  // return tracer.startActiveSpan("handleChatRequest", async (span: Span) => {
+  console.log('request: ', request);
 
-  return startActiveObservation("handleChatRequest", async (span: LangfuseSpan) => {
+  return chatHandler({ requestBody, userToken, testCaseId, testCaseRunRecordId });
+};
+
+export async function chatHandler(
+  {
+    requestBody, 
+    testCaseId, 
+    testCaseRunRecordId,
+    userToken = '',
+  }: {
+    requestBody: any, 
+    testCaseId?: string, 
+    testCaseRunRecordId?: string,
+    userToken: string
+  }): Promise<any> {
+
+  let output: any = null;
+  let usefulData = new Map();
+  let finalDeliverable = '';
+  const requestContext: RequestContext = {
+    ragEntity: undefined,
+    flatUsefulDataMap: new Map(),
+    usefulDataArray: []
+  };
+  return startActiveObservation("chatHandler", async (span: LangfuseSpan) => {
+    const { messages, sessionId: clientSessionId, isApproval: clientIsApproval } = requestBody;
+    const sessionId = clientSessionId || generateSessionId(messages);
+
+    span.updateTrace({
+      name: "chatHandler-" + sessionId, // Use client session ID if provided for better trace correlation
+    })
+    span.update({
+      input: {
+        requestBody, 
+        testCaseId, 
+        testCaseRunRecordId,
+        userToken
+      },
+    });
+
     span.updateTrace({ 
-      sessionId: clientSessionId,
+      sessionId: sessionId,
       metadata: { 
-        sessionId: clientSessionId, 
+        sessionId: sessionId, 
         testCaseId, 
         testCaseRunRecordId,
         body: requestBody
@@ -114,17 +140,10 @@ const handler = async (request: NextRequest) => {
     });
 
     try {
-      // Extract user token from Authorization header (optional)
-      const authHeader = request.headers.get('Authorization') || '';
-      const userToken = authHeader.startsWith('Bearer ') ? authHeader.replace('Bearer ', '') : '';
-      console.log('userToken:', userToken);
-
-
       console.log('\n💬 Received messages:', messages.length);
       console.log('\n💬 Received final message:', messages[messages.length - 1]);
 
       // Use client-provided session ID if available, otherwise generate one
-      const sessionId = clientSessionId || generateSessionId(messages);
       console.log('📋 Session ID:', sessionId);
       console.log('📋 Client provided sessionId:', clientSessionId);
       console.log('📋 Pending plans:', Array.from(pendingPlans.keys()));
@@ -363,8 +382,8 @@ const handler = async (request: NextRequest) => {
           let actionablePlan;
           let plannerRawResponse;
 
-          // Use planningAgent for planning trace (optional, can be extended for more planning steps)
-          planningAgent.plan.tasks = [
+          // Use plannerAgent for planning trace (optional, can be extended for more planning steps)
+          plannerAgent.plan.tasks = [
             {
               id: '1',
               description: 'Generate execution plan',
@@ -373,8 +392,8 @@ const handler = async (request: NextRequest) => {
               status: 'pending',
             },
           ];
-          // Run planning agent (trace will show planning phase)
-          await planningAgent.run(span);
+          // Run Planner Agent (trace will show planning phase)
+          await plannerAgent.run(span);
 
           // --- Actual Plan Generation ---
           try {
@@ -652,15 +671,15 @@ const handler = async (request: NextRequest) => {
     }
     finally {
       // parent?.end();
+      console.log('Final output:', output);
       span.update({
-        input: messages,
         output: output
-      });
-      span.end();
+      })
+      .end();
 
       return NextResponse.json(output);
     }
   });
-};
+}
 
-export const POST = handler;
+export const POST = chatHandlerWrapper;

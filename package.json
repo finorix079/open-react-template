@@ -8,7 +8,7 @@
     "start": "next start -p 3001",
     "lint": "next lint",
     "test:ai": "NODE_OPTIONS='--import tsx/esm' elasticdash test",
-    "dashboard:ai": "NODE_OPTIONS='--import tsx/esm' elasticdash dashboard"
+    "dashboard:ai": "NODE_OPTIONS='--import tsx/esm --require tsx/cjs --require tsconfig-paths/register' elasticdash dashboard"
   },
   "dependencies": {
     "@elasticdash/openai": "^0.0.10",
@@ -25,7 +25,7 @@
     "aos": "3.0.0-beta.6",
     "axios": "^1.13.2",
     "dotenv": "^17.2.3",
-    "elasticdash-test": "^0.1.11-alpha-1",
+    "elasticdash-test": "file:../elasticdash-test-js",
     "jaison": "^2.0.2",
     "next": "15.1.11",
     "openai": "^6.16.0",
@@ -34,6 +34,7 @@
     "react-dom": "19.2.3",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3"
   },
   "devDependencies": {
