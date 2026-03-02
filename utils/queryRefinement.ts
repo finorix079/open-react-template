@@ -27,7 +27,7 @@ export async function clarifyAndRefineUserInput(
   }
   
   // Build the prompt with CURRENT query emphasized as PRIMARY
-  const systemPrompt = `You are an assistant that refines user queries and identifies what needs to be investigated to answer them.
+  const systemPrompt = `You are an genius that refines user queries and identifies what needs to be investigated to answer them.
 
 CRITICAL - DATABASE RULES:
 ==========================

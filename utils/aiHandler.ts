@@ -13,7 +13,7 @@ import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { LangfuseObservation, LangfuseSpan, LangfuseTool } from "@langfuse/tracing";
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { RequestContext } from '@/services/chatPlannerService';
-import { isRecordingSession, recordToolCallManual } from 'elasticdash-test';
+// import { isRecordingSession, recordToolCallManual } from 'elasticdash-test';
 
 async function executeWithObservation(
   parentObs: LangfuseObservation,
@@ -29,15 +29,15 @@ async function executeWithObservation(
     toolObs.update({ output });
     toolObs.end();
 
-	if (isRecordingSession()) {
-		// Only record when in a validation/test run
-		const captured = recordToolCallManual(toolName, input, output);
+	// if (isRecordingSession()) {
+	// 	// Only record when in a validation/test run
+	// 	const captured = recordToolCallManual(toolName, input, output);
 
-		console.log(`Recorded tool call: ${toolName}`, { captured });
-	}
-	else {
-		console.log('Not a recorded tool call')
-	}
+	// 	console.log(`Recorded tool call: ${toolName}`, { captured });
+	// }
+	// else {
+	// 	console.log('Not a recorded tool call')
+	// }
 
     return output;
   } catch (err) {
@@ -49,15 +49,15 @@ async function executeWithObservation(
 	.end();
 
 
-	if (isRecordingSession()) {
-		// Only record when in a validation/test run
-		const captured = recordToolCallManual(toolName, input, err);
+	// if (isRecordingSession()) {
+	// 	// Only record when in a validation/test run
+	// 	const captured = recordToolCallManual(toolName, input, err);
 
-		console.log(`Recorded tool call: ${toolName}`, { captured });
-	}
-	else {
-		console.log('Not a recorded tool call')
-	}
+	// 	console.log(`Recorded tool call: ${toolName}`, { captured });
+	// }
+	// else {
+	// 	console.log('Not a recorded tool call')
+	// }
 
 	console.log(`Recorded tool call with error: ${toolName}`, {
 		error: err instanceof Error ? err.message : String(err),
