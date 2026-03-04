@@ -89,7 +89,16 @@ const chatHandlerWrapper = async (request: NextRequest) => {
 
   console.log('request: ', request);
 
-  return chatHandler({ requestBody, userToken, testCaseId, testCaseRunRecordId });
+  return chatHandler({ requestBody, userToken, testCaseId, testCaseRunRecordId })
+  .then((output) => NextResponse.json(output))
+  .catch((err) => {
+      console.error('Error in chatHandler:', err);
+      const output = {
+        error: 'Internal server error'
+      }
+      // parent?.updateTrace({ output }); --- IGNORE ---
+      return NextResponse.json(output, { status: 500 });
+  });
 };
 
 export async function chatHandler(
@@ -142,6 +151,7 @@ export async function chatHandler(
     try {
       console.log('\n💬 Received messages:', messages.length);
       console.log('\n💬 Received final message:', messages[messages.length - 1]);
+      console.log('process.env.NEXT_PUBLIC_POKEMON_API:', process.env.NEXT_PUBLIC_POKEMON_API);
 
       // Use client-provided session ID if available, otherwise generate one
       console.log('📋 Session ID:', sessionId);
@@ -666,8 +676,6 @@ export async function chatHandler(
       output = {
         error: 'Internal server error'
       };
-      // parent?.updateTrace({ output });
-      // return NextResponse.json(output, { status: 500 });
     }
     finally {
       // parent?.end();
@@ -677,9 +685,18 @@ export async function chatHandler(
       })
       .end();
 
-      return NextResponse.json(output);
+      // return NextResponse.json(output);
+      return output;
     }
-  });
+  })
+  .then((result) => {
+    console.log('chatHandler completed with result:', result);
+    return result;
+  })
+  .catch((err) => {
+    console.error('Error in chatHandler:', err);
+    return { error: 'Internal server error' };
+  });;
 }
 
 export const POST = chatHandlerWrapper;

@@ -16,6 +16,7 @@ export async function clarifyAndRefineUserInput(
   intentType: "FETCH" | "MODIFY",
   referenceTask?: SavedTask
 }> {
+  console.log('🔍 Starting query refinement for user input:', userInput);
   // Extract current query from context if present
   let currentQuery = userInput;
   let contextHistory = '';
@@ -27,7 +28,7 @@ export async function clarifyAndRefineUserInput(
   }
   
   // Build the prompt with CURRENT query emphasized as PRIMARY
-  const systemPrompt = `You are an genius that refines user queries and identifies what needs to be investigated to answer them.
+  const systemPrompt = `You are an expert that refines user queries and identifies what needs to be investigated to answer them.
 
 CRITICAL - DATABASE RULES:
 ==========================
