@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { recordToolCall } from 'elasticdash-test';
 
 const API_BASE_URL = `${process.env.NEXT_PUBLIC_ELASTICDASH_API}/pokemon`;
 
@@ -70,7 +71,9 @@ export const searchPokemon = async ({
       throw new Error("Pokémon not found");
     }
 
-    return response.json();
+    const data = await response.json();
+    recordToolCall('pokemonService', [searchterm, page, sortby, filter], data);
+    return data;
   } catch (error: any) {
     console.warn("Error searching Pokémon:", error);
     throw error;
@@ -95,7 +98,8 @@ export const searchMove = async ({ searchterm = '', page = 0 }: { searchterm?: s
     if (!response.ok) {
       throw new Error("Move not found");
     }
-    return response.json();
+    const data = await response.json();
+    return data;
   } catch (error: any) {
     console.warn("Error searching Move:", error);
     throw error;

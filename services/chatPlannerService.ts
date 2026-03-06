@@ -97,7 +97,24 @@ export async function getAllMatchedApis({
       console.warn(`Failed to generate embedding for entity "${entity}"`);
       continue;
     }
+
     const embeddingData = await embeddingResponse.json();
+    const isObject = typeof embeddingData === 'object' && embeddingData !== null;
+    console.log('embeddingResponse: ', embeddingResponse);
+
+    if (!isObject || !Array.isArray(embeddingData.data) || !embeddingData.data[0] || !embeddingData.data[0].embedding) {
+      const logVal = isObject ? JSON.stringify(embeddingData) : String(embeddingData);
+      console.warn(`Embedding API response for entity "${entity}" is missing data or malformed:`, logVal);
+      fs.appendFileSync(
+        path.join(process.cwd(), 'embedding-error-log.txt'),
+        `\n[${new Date().toISOString()}] Entity: "${entity}" - Response: ${logVal}\n`
+      );
+      continue;
+    }
+    else {
+      console.log(`Embedding generated for entity "${entity}", proceeding with similarity search`);
+      console.log(`Embedding vector (first 5 values):`, embeddingData.data[0].embedding.slice(0, 5));
+    }
     const entityEmbedding = embeddingData.data[0].embedding;
 
     const tableResults = findTopKSimilarTable(entityEmbedding, 10, context);
