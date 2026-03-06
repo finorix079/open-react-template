@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { clarifyAndRefineUserInput, handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
-import { agentTools, openaiChatCompletion } from '@/utils/aiHandler';
+import { openaiChatCompletion, serializeAgentState, resumeAgentFromTrace, plannerAgent, executorAgent, AgentPlan, AgentState } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
 // import { ElasticDashSpan, propagateAttributes, startActiveObservation } from "@elasticdash/tracing";
 import { LangfuseSpan, propagateAttributes, startActiveObservation } from "@langfuse/tracing";
@@ -32,8 +32,6 @@ import { runPlannerWithInputs } from './plannerUtils';
 
 // Executor
 import { generateFinalAnswer, executeIterativePlanner } from './executor';
-
-import { plannerAgent, executorAgent } from '@/utils/aiHandler';
 
 const chatHandlerWrapper = async (request: NextRequest) => {
   // Create request-local context to prevent race conditions
@@ -152,6 +150,28 @@ export async function chatHandler(
       console.log('\n💬 Received messages:', messages.length);
       console.log('\n💬 Received final message:', messages[messages.length - 1]);
       console.log('process.env.NEXT_PUBLIC_POKEMON_API:', process.env.NEXT_PUBLIC_POKEMON_API);
+
+      // ------------------------------------------------------------------
+      // Agent Mid-Trace Replay: if the request carries a serialised
+      // AgentState, resume from the specified task index instead of running
+      // the full pipeline.
+      // ------------------------------------------------------------------
+      if (requestBody.agentState && typeof requestBody.resumeFromTaskIndex === 'number') {
+        console.log('🔁 Mid-trace replay requested from task index:', requestBody.resumeFromTaskIndex);
+        const incomingState: AgentState = {
+          ...requestBody.agentState,
+          resumeFromTaskIndex: requestBody.resumeFromTaskIndex,
+        };
+        const resumedPlan = await resumeAgentFromTrace(incomingState);
+        const replayAgentState = serializeAgentState(resumedPlan);
+        output = {
+          message: `Resumed from task ${requestBody.resumeFromTaskIndex}`,
+          agentState: replayAgentState,
+          executedTasks: resumedPlan.tasks,
+          planStatus: resumedPlan.status,
+        };
+        return output;
+      }
 
       // Use client-provided session ID if available, otherwise generate one
       console.log('📋 Session ID:', sessionId);
@@ -392,18 +412,8 @@ export async function chatHandler(
           let actionablePlan;
           let plannerRawResponse;
 
-          // Use plannerAgent for planning trace (optional, can be extended for more planning steps)
-          plannerAgent.plan.tasks = [
-            {
-              id: '1',
-              description: 'Generate execution plan',
-              tool: agentTools['queryRefinement'],
-              input: { userInput: refinedQuery, userToken },
-              status: 'pending',
-            },
-          ];
-          // Run Planner Agent (trace will show planning phase)
-          await plannerAgent.run(span);
+          // Use plannerAgent for planning trace (records a queryRefinement step for observability)
+          await plannerAgent(refinedQuery, { userToken });
 
           // --- Actual Plan Generation ---
           try {
@@ -559,48 +569,56 @@ export async function chatHandler(
               return output;
             }
             console.log('checkpoint 3');
-            // Convert execution_plan steps to AgentTask objects with correct tool mapping
-            executorAgent.plan.tasks = actionablePlan.execution_plan.map((step: any, idx: number) => {
-              // Map API path/method to toolName
-              let toolName = '';
-              let inputPayload: any = step.api.requestBody || {};
+            // Build AgentPlan from execution steps and run via executorAgent function
+            const agentPlan: AgentPlan = {
+              id: `plan-${sessionId}-${Date.now()}`,
+              goal: refinedQuery,
+              status: 'planning',
+              currentTaskIndex: 0,
+              context: { userToken },
+              metadata: { sessionId, refinedQuery },
+              tasks: actionablePlan.execution_plan.map((step: any, idx: number) => {
+                // Map API path/method to toolName
+                let toolName = '';
+                let inputPayload: unknown = step.api.requestBody || {};
 
-              // SQL query execution
-              if (step.api.path === '/general/sql/query' && step.api.method === 'post') {
-                toolName = 'dataService';
-              }
-
-              // Watchlist operations
-              if (step.api.path === '/pokemon/watchlist') {
-                toolName = 'watchlistService';
-                if (step.api.method === 'post') {
-                  inputPayload = { action: 'add', payload: step.api.requestBody, userToken };
-                } else if (step.api.method === 'delete') {
-                  inputPayload = { action: 'remove', payload: step.api.requestBody, userToken };
-                } else if (step.api.method === 'get') {
-                  inputPayload = { action: 'list', userToken };
+                // SQL query execution
+                if (step.api.path === '/general/sql/query' && step.api.method === 'post') {
+                  toolName = 'dataService';
                 }
-              }
 
-              // Add more mappings as needed for other APIs
-              if (!toolName) {
-                throw new Error(`No tool mapping found for API path: ${step.api.path}, method: ${step.api.method}`);
-              }
-              return {
-                id: String(idx + 1),
-                description: step.description,
-                tool: agentTools[toolName],
-                input: inputPayload,
-                status: "pending"
-              };
-            });
+                // Watchlist operations
+                if (step.api.path === '/pokemon/watchlist') {
+                  toolName = 'watchlistService';
+                  if (step.api.method === 'post') {
+                    inputPayload = { action: 'add', payload: step.api.requestBody, userToken };
+                  } else if (step.api.method === 'delete') {
+                    inputPayload = { action: 'remove', payload: step.api.requestBody, userToken };
+                  } else if (step.api.method === 'get') {
+                    inputPayload = { action: 'list', userToken };
+                  }
+                }
+
+                // Add more mappings as needed for other APIs
+                if (!toolName) {
+                  throw new Error(`No tool mapping found for API path: ${step.api.path}, method: ${step.api.method}`);
+                }
+                return {
+                  id: String(idx + 1),
+                  description: step.description,
+                  tool: toolName,
+                  input: inputPayload,
+                  status: 'pending' as const,
+                };
+              }),
+            };
             console.log('checkpoint 4');
-            // Run the executor agent, passing the Langfuse span as parent observation
-            await executorAgent.run(span);
+            // Execute the plan using the new function-based executorAgent
+            const executedPlan = await executorAgent(agentPlan);
             console.log('checkpoint 5');
 
             // Build response from executed task outputs
-            const executedTasks = executorAgent.plan.tasks;
+            const executedTasks = executedPlan.tasks;
             const firstOutput = executedTasks[0]?.output;
 
             console.log('checkpoint 6');
@@ -630,6 +648,8 @@ export async function chatHandler(
               planningDurationMs,
               usedReferencePlan: actionablePlan._from_reference_task || false,
               executedTasks,
+              /** Serialised agent state — pass back as `agentState` + `resumeFromTaskIndex` to replay from any task */
+              agentState: serializeAgentState(executedPlan),
             };
             return output;
           }
@@ -679,7 +699,9 @@ export async function chatHandler(
     }
     finally {
       // parent?.end();
-      console.log('Final output:', output);
+      const displayOutput = { ...output };
+      displayOutput.topKResults = displayOutput.topKResults ? displayOutput.topKResults.length : undefined; // Limit topKResults in logs for readability
+      console.log('Final output:', displayOutput);
       span.update({
         output: output
       })
@@ -690,7 +712,9 @@ export async function chatHandler(
     }
   })
   .then((result) => {
-    console.log('chatHandler completed with result:', result);
+    const displayResult = { ...result };
+    displayResult.topKResults = displayResult.topKResults ? displayResult.topKResults.length : undefined; // Limit topKResults in logs for readability
+    console.log('chatHandler completed with result:', displayResult);
     return result;
   })
   .catch((err) => {

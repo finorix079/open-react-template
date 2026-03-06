@@ -3,7 +3,7 @@ import { fetchTaskList, SavedTask } from "@/services/taskService";
 import { openaiChatCompletion } from '@/utils/aiHandler';
 import path from 'path';
 import fs from 'fs';
-import { recordToolCall } from "elasticdash-test";
+// import { recordToolCall } from "elasticdash-test";
 
 export async function clarifyAndRefineUserInput(
   userInput: string,
@@ -241,7 +241,7 @@ IntentType: ["FETCH"/"MODIFY"]`;
   console.log('✅ Query Refinement Result:', { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask });
 
   console.log('Recording query refinement tool call with parameters and result');
-  recordToolCall('queryRefinement', [userInput, userToken ?? null], { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask });
+  // recordToolCall('queryRefinement', [userInput, userToken ?? null], { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask });
   return { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask };
 }
 

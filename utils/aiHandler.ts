@@ -11,9 +11,11 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { observeOpenAI } from "@langfuse/openai";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { LangfuseObservation, LangfuseSpan, LangfuseTool } from "@langfuse/tracing";
+import { startActiveObservation } from "@langfuse/tracing";
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { RequestContext } from '@/services/chatPlannerService';
-// import { isRecordingSession, recordToolCallManual } from 'elasticdash-test';
+import { recordToolCall } from 'elasticdash-test';
+import { apiService, dataService, pokemonService, queryRefinement, taskSelectorService, watchlistService } from '@/ed_tools';
 
 async function executeWithObservation(
   parentObs: LangfuseObservation,
@@ -28,17 +30,7 @@ async function executeWithObservation(
     const output = await fn();
     toolObs.update({ output });
     toolObs.end();
-
-	// if (isRecordingSession()) {
-	// 	// Only record when in a validation/test run
-	// 	const captured = recordToolCallManual(toolName, input, output);
-
-	// 	console.log(`Recorded tool call: ${toolName}`, { captured });
-	// }
-	// else {
-	// 	console.log('Not a recorded tool call')
-	// }
-
+    recordToolCall(toolName, input, output);
     return output;
   } catch (err) {
     toolObs
@@ -47,22 +39,7 @@ async function executeWithObservation(
 		statusMessage: (err as Error).message,
 	})
 	.end();
-
-
-	// if (isRecordingSession()) {
-	// 	// Only record when in a validation/test run
-	// 	const captured = recordToolCallManual(toolName, input, err);
-
-	// 	console.log(`Recorded tool call: ${toolName}`, { captured });
-	// }
-	// else {
-	// 	console.log('Not a recorded tool call')
-	// }
-
-	console.log(`Recorded tool call with error: ${toolName}`, {
-		error: err instanceof Error ? err.message : String(err),
-		stack: err instanceof Error ? err.stack : undefined
-	});
+    recordToolCall(toolName, input, err);
     throw err;
   }
 }
@@ -78,8 +55,8 @@ export const agentTools: Record<string, AgentTool> = {
 		name: "apiService",
 		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
 			return executeWithObservation(parentObs, "apiService", input, async () => {
-				const typedInput = input as { baseUrl: string; schema: any; userToken?: string };
-				return await dynamicApiRequest(typedInput.baseUrl, typedInput.schema, typedInput.userToken);
+				// const typedInput = input as { baseUrl: string; schema: any; userToken?: string };
+				return await apiService(input);
 			});
 		},
 		description: "Dynamic API request tool",
@@ -88,8 +65,8 @@ export const agentTools: Record<string, AgentTool> = {
 		name: "queryRefinement",
 		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
 			return executeWithObservation(parentObs, "queryRefinement", input, async () => {
-				const typedInput = input as { userInput: string; userToken?: string };
-				return await clarifyAndRefineUserInput(typedInput.userInput, typedInput.userToken);
+				// const typedInput = input as { userInput: string; userToken?: string };
+				return await queryRefinement(input);
 			});
 		},
 		description: "Refine and clarify user queries",
@@ -98,8 +75,8 @@ export const agentTools: Record<string, AgentTool> = {
 		name: "dataService",
 		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
 			return executeWithObservation(parentObs, "dataService", input, async () => {
-				const typedInput = input as { query: string };
-				return await runSelectQuery(typedInput.query);
+				// const typedInput = input as { query: string };
+				return await dataService(input);
 			});
 		},
 		description: "Run SELECT queries on database",
@@ -108,7 +85,7 @@ export const agentTools: Record<string, AgentTool> = {
 		name: "pokemonService",
 		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
 			return executeWithObservation(parentObs, "pokemonService", input, async () => {
-				return await searchPokemon(input);
+				return await pokemonService(input);
 			});
 		},
 		description: "Search and manage Pokémon data",
@@ -118,7 +95,7 @@ export const agentTools: Record<string, AgentTool> = {
 		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
 			return executeWithObservation(parentObs, "taskSelectorService", input, async () => {
 				const { queryEmbedding, topK, context } = input as { queryEmbedding: number[]; topK?: number; context?: unknown };
-				return await findTopKSimilarApi({ queryEmbedding, topK, context: context as (RequestContext | undefined) });
+				return await taskSelectorService({ queryEmbedding, topK, context: context as (RequestContext | undefined) });
 			});
 		},
 		description: "Find top-k similar API tasks",
@@ -130,171 +107,432 @@ export const agentTools: Record<string, AgentTool> = {
 				const { action, payload, userToken } = input as { action: 'add' | 'remove' | 'list'; payload?: any; userToken?: string };
 				if (action === 'add') return await watchlistAdd(payload, userToken);
 				if (action === 'remove') return await watchlistRemove(payload, userToken);
-				return await watchlistList(userToken);
+				return await watchlistService(input);
 			});
 		},
 		description: "Manage user Pokémon watchlist",
 	},
 };
 
-// --- Named Agent Example ---
-/**
- * Planner Agent: Responsible for generating and refining plans.
- * Shares tool set but only uses planning-related tools.
- */
-export const plannerAgent: Agent = {
-	id: "planning-agent-001",
-	name: "plannerAgent",
-	plan: {
-		goal: "Generate and refine execution plans",
-		tasks: [],
-	},
-	selectTool: (task) => {
-		// For planning, use queryRefinement or other planning tools
-		if (task.tool && task.tool.name && agentTools[task.tool.name]) {
-			return agentTools[task.tool.name];
-		}
-		throw new Error(`No planning tool found for task: ${JSON.stringify(task)}`);
-	},
-	executeTask: async (task: AgentTask, parentObs: LangfuseObservation): Promise<AgentTask> => {
-		const tool = agentTools[task.tool.name];
-		const input = task.input;
-		try {
-			task.output = await tool.execute(input, parentObs);
-			task.status = "completed";
-		} catch (err) {
-			task.status = "failed";
-			task.output = {
-				error: err instanceof Error ? err.message : String(err),
-				stack: err instanceof Error ? err.stack : undefined,
-			};
-		}
-		return task;
-	},
-	run: async function (rootSpan: LangfuseSpan): Promise<AgentPlan> {
-		let apiCallCount = 0;
-		const API_CALL_LIMIT = 50;
-		try {
-			for (const task of this.plan.tasks) {
-				if (apiCallCount >= API_CALL_LIMIT) {
-					rootSpan.update({
-						statusMessage: `API call limit (${API_CALL_LIMIT}) reached`,
-						level: 'ERROR',
-						output: this.plan
-					});
-					rootSpan.end();
-					break;
-				}
-				await this.executeTask(task, rootSpan);
-				apiCallCount++;
-			}
-			// if (apiCallCount < API_CALL_LIMIT) {
-			// 	rootSpan.update({ output: this.plan });
-			// 	rootSpan.end();
-			// }
-			return this.plan;
-		} catch (err) {
-			rootSpan.update({
-				statusMessage: (err as Error).message,
-				level: 'ERROR',
-				output: this.plan
-			});
-			rootSpan.end();
-			throw err;
-		}
-	},
-};
+// ============================================================
+// Agent interfaces
+// ============================================================
 
 /**
- * Executor Agent: Responsible for executing plan steps.
- * Shares tool set but only uses execution-related tools.
- */
-export const executorAgent: Agent = {
-	id: "executor-agent-001",
-	name: "ExecutorAgent",
-	plan: {
-		goal: "Execute plan steps using available tools",
-		tasks: [],
-	},
-	selectTool: (task) => {
-		// For execution, use apiService, dataService, etc.
-		if (task.tool && task.tool.name && agentTools[task.tool.name]) {
-			return agentTools[task.tool.name];
-		}
-		throw new Error(`No execution tool found for task: ${JSON.stringify(task)}`);
-	},
-	executeTask: async (task: AgentTask, parentObs: LangfuseObservation): Promise<AgentTask> => {
-		const tool = agentTools[task.tool.name];
-		const input = task.input;
-		try {
-			task.output = await tool.execute(input, parentObs);
-			task.status = "completed";
-		} catch (err) {
-			task.status = "failed";
-			task.output = {
-				error: err instanceof Error ? err.message : String(err),
-				stack: err instanceof Error ? err.stack : undefined,
-			};
-		}
-		return task;
-	},
-	run: async function (rootSpan: LangfuseSpan): Promise<AgentPlan> {
-		let apiCallCount = 0;
-		const API_CALL_LIMIT = 50;
-		console.log(`ExecutorAgent starting execution of plan with ${this.plan.tasks.length} tasks`);
-		try {
-			for (const task of this.plan.tasks) {
-				if (apiCallCount >= API_CALL_LIMIT) {
-					rootSpan.update({
-						statusMessage: `API call limit (${API_CALL_LIMIT}) reached`,
-						level: 'ERROR',
-						output: this.plan
-					});
-					rootSpan.end();
-					break;
-				}
-				await this.executeTask(task, rootSpan);
-				console.log(`ExecutorAgent completed task ${task.id} with status ${task.status}`);
-				apiCallCount++;
-			}
-			if (apiCallCount < API_CALL_LIMIT) {
-				// rootSpan.update({ output: this.plan });
-				console.log('ExecutorAgent completed all tasks within API call limit');
-				// rootSpan.end();
-			}
-			return this.plan;
-		} catch (err) {
-			rootSpan.update({
-				statusMessage: (err as Error).message,
-				level: 'ERROR',
-				output: this.plan
-			});
-			rootSpan.end();
-			throw err;
-		}
-	},
-};
-
-/**
- * Agentic flow interfaces and stub orchestration logic
- * Custom agentic flow implementation for tool-based automation
- *
- * Extend Agent, AgentTask, AgentTool, AgentPlan for new agentic flows
+ * Single step in an agent's execution plan.
+ * Fully JSON-serializable — `tool` is a string key into `agentTools`.
  */
 export interface AgentTask {
+  /** Unique task identifier within the plan */
   id: string;
+  /** Human-readable description of what this task does */
   description: string;
-  tool: AgentTool;
-  input: any;
+  /** Tool name — must be a key in `agentTools` (e.g. 'apiService', 'dataService') */
+  tool: string;
+  /** Task input; may contain `{$task.N.output[.path]}` placeholders */
+  input: unknown;
+  /** Populated after execution */
   output?: unknown;
-  status: "pending" | "in-progress" | "completed" | "failed";
+  status: 'pending' | 'in-progress' | 'completed' | 'failed';
+  /** Unix ms timestamp when this task started */
+  startedAt?: number;
+  /** Unix ms timestamp when this task finished */
+  completedAt?: number;
+  /** Error message if the task failed */
+  error?: string;
 }
 
+/**
+ * Full agent execution plan. All fields are required to enable safe
+ * serialization and mid-trace resumption.
+ */
 export interface AgentPlan {
-  tasks: AgentTask[];
+  /** Unique plan identifier */
+  id: string;
+  /** High-level goal for this plan */
   goal: string;
+  tasks: AgentTask[];
+  status: 'planning' | 'executing' | 'completed' | 'failed' | 'paused';
+  /** Zero-based index of the task currently being executed */
+  currentTaskIndex: number;
+  /** Shared data accessible to all tasks */
+  context: Record<string, unknown>;
+  /** Additional metadata (session ID, user query, timing, etc.) */
+  metadata: Record<string, unknown>;
 }
 
+// ============================================================
+// Mid-Trace Replay types
+// ============================================================
+
+/**
+ * A workflow trace event captured during agent execution.
+ *
+ * During workflow live reruns `agentTaskId` and `agentTaskIndex` are populated
+ * so the dashboard can group events by agent task and show the
+ * "Resume from Task N" button.
+ */
+export interface WorkflowEvent {
+  taskId: string;
+  toolName: string;
+  input: unknown;
+  output: unknown;
+  status: 'completed' | 'failed';
+  startedAt?: number;
+  completedAt?: number;
+  error?: string;
+  /** Identifies the owning agent task — populated during workflow reruns only */
+  agentTaskId?: string;
+  /** Zero-based index of the owning agent task — populated during workflow reruns only */
+  agentTaskIndex?: number;
+}
+
+/**
+ * Complete, JSON-serializable agent state for mid-trace resumption.
+ *
+ * @example
+ * // Save state after (partial) execution
+ * const state = serializeAgentState(completedPlan);
+ * fs.writeFileSync('state.json', JSON.stringify(state, null, 2));
+ *
+ * // Later: resume from task 2
+ * const saved = JSON.parse(fs.readFileSync('state.json', 'utf8'));
+ * const resumed = await resumeAgentFromTrace({ ...saved, resumeFromTaskIndex: 2 });
+ */
+export interface AgentState {
+  /** Full plan including tasks with their captured outputs */
+  plan: AgentPlan;
+  /** Trace events captured during previous execution */
+  trace: WorkflowEvent[];
+  /** Zero-based index — tasks before this index are loaded from cache on resume */
+  resumeFromTaskIndex: number;
+}
+
+// ============================================================
+// Mid-Trace Replay utilities
+// ============================================================
+
+/**
+ * Extracts all task outputs into a flat map keyed by both the zero-based task
+ * index (as a string) and the task id.  Used internally by `resolveTaskInput`
+ * to resolve `{$task.N.output.path}` placeholders.
+ *
+ * @param plan - Plan whose tasks may carry outputs
+ * @returns `{ "0": output0, "task-1": output0, "1": output1, ... }`
+ */
+export function extractTaskOutputs(plan: AgentPlan): Record<string, unknown> {
+  const outputs: Record<string, unknown> = {};
+  plan.tasks.forEach((task, index) => {
+    if (task.output !== undefined) {
+      outputs[String(index)] = task.output;
+      outputs[task.id] = task.output;
+    }
+  });
+  return outputs;
+}
+
+/**
+ * Recursively resolves `{$task.N.output[.dotPath]}` placeholders embedded in a
+ * task input value.
+ *
+ * Placeholder format: `{$task.<zeroBasedIndex>.output[.<dotSeparatedPath>]}`
+ *
+ * Examples:
+ * - `"{$task.0.output}"` → full output of task 0 (returns original type)
+ * - `"{$task.1.output.embedding}"` → `embedding` field of task 1's output
+ * - Objects and arrays are traversed recursively
+ * - A placeholder that occupies the **entire** string value returns the
+ *   resolved value with its original type (e.g. number, array).
+ * - A placeholder embedded in a larger string is stringified inline.
+ *
+ * @param input - Raw input value (string, object, array, or primitive)
+ * @param previousOutputs - Output map from `extractTaskOutputs`
+ * @returns Input with all placeholders replaced by real values
+ * @throws Error if a placeholder references a task with no recorded output
+ */
+export function resolveTaskInput(
+  input: unknown,
+  previousOutputs: Record<string, unknown>,
+): unknown {
+  const PLACEHOLDER_RE = /\{\$task\.(\d+)\.output(?:\.([^}]+))?\}/g;
+
+  function walkPath(root: unknown, path: string, taskIndex: string): unknown {
+    const parts = path.split('.');
+    let cursor: unknown = root;
+    for (const part of parts) {
+      if (cursor === null || cursor === undefined || typeof cursor !== 'object') {
+        throw new Error(
+          `resolveTaskInput: cannot traverse path "${path}" for task ${taskIndex} — reached non-object at "${part}"`,
+        );
+      }
+      cursor = (cursor as Record<string, unknown>)[part];
+    }
+    return cursor;
+  }
+
+  function resolveString(str: string): unknown {
+    // Single full-string placeholder → preserve original type
+    const singleMatch = str.match(/^\{\$task\.(\d+)\.output(?:\.([^}]+))?\}$/);
+    if (singleMatch) {
+      const [, index, path] = singleMatch;
+      const taskOutput = previousOutputs[index];
+      if (taskOutput === undefined) {
+        throw new Error(`resolveTaskInput: no output found for task index ${index}`);
+      }
+      return path ? walkPath(taskOutput, path, index) : taskOutput;
+    }
+    // Inline placeholders — stringify resolved values
+    return str.replace(PLACEHOLDER_RE, (_, index, path) => {
+      const taskOutput = previousOutputs[index];
+      if (taskOutput === undefined) {
+        throw new Error(`resolveTaskInput: no output found for task index ${index}`);
+      }
+      const value = path ? walkPath(taskOutput, path, index) : taskOutput;
+      return value !== undefined ? String(value) : '';
+    });
+  }
+
+  function deepResolve(val: unknown): unknown {
+    if (typeof val === 'string') return resolveString(val);
+    if (Array.isArray(val)) return val.map(deepResolve);
+    if (typeof val === 'object' && val !== null) {
+      const obj = val as Record<string, unknown>;
+      // Support elasticdash-test's { $ref: "taskId.output.path" } object format
+      if (typeof obj['$ref'] === 'string') {
+        const ref = obj['$ref'] as string;
+        const parts = ref.split('.');
+        const taskId = parts[0];
+        const pathParts = parts.slice(1); // may include literal "output" keyword
+        let cursor: unknown = previousOutputs[taskId];
+        for (const part of pathParts) {
+          if (part === 'output') continue; // "output" is a keyword separator, skip
+          if (cursor === null || cursor === undefined) return undefined;
+          cursor = (cursor as Record<string, unknown>)[part];
+        }
+        return cursor;
+      }
+      const resolved: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        resolved[k] = deepResolve(v);
+      }
+      return resolved;
+    }
+    return val;
+  }
+
+  return deepResolve(input);
+}
+
+/**
+ * Serializes a (partial or complete) `AgentPlan` and optional trace events into
+ * an `AgentState`.  The `resumeFromTaskIndex` is automatically determined as the
+ * index of the first non-completed task (or `tasks.length` if all tasks are done).
+ *
+ * @param plan - Plan after execution (tasks may be partially completed)
+ * @param trace - Optional trace events recorded during execution
+ * @returns JSON-serializable `AgentState`
+ */
+export function serializeAgentState(
+  plan: AgentPlan,
+  trace: WorkflowEvent[] = [],
+): AgentState {
+  const firstIncomplete = plan.tasks.findIndex((t) => t.status !== 'completed');
+  const resumeFromTaskIndex = firstIncomplete === -1 ? plan.tasks.length : firstIncomplete;
+  return {
+    plan: { ...plan, tasks: plan.tasks.map((t) => ({ ...t })) },
+    trace,
+    resumeFromTaskIndex,
+  };
+}
+
+/**
+ * Validates and hydrates an `AgentState` loaded from JSON.
+ *
+ * Accepts `unknown` input (e.g. `JSON.parse(...)`) and validates that:
+ * - `plan.tasks` is a valid array
+ * - All tasks before `resumeFromTaskIndex` that are marked `completed` have
+ *   an output (needed for placeholder resolution)
+ * - All referenced tool names exist in `agentTools`
+ *
+ * @param raw - Raw parsed value (e.g. from `JSON.parse`)
+ * @returns The validated `AgentState` (same structure, guaranteed safe to resume)
+ * @throws Error if any validation check fails
+ */
+export function deserializeAgentState(raw: unknown): AgentState {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('deserializeAgentState: state must be a non-null object');
+  }
+  const state = raw as Record<string, unknown>;
+  const plan = state['plan'] as AgentPlan | undefined;
+  if (!plan || !Array.isArray(plan.tasks)) {
+    throw new Error('deserializeAgentState: invalid state — missing plan.tasks');
+  }
+  const resumeFromTaskIndex =
+    typeof state['resumeFromTaskIndex'] === 'number' ? state['resumeFromTaskIndex'] : 0;
+  const trace = Array.isArray(state['trace']) ? (state['trace'] as WorkflowEvent[]) : [];
+  for (let i = 0; i < Math.min(resumeFromTaskIndex, plan.tasks.length); i++) {
+    const task = plan.tasks[i];
+    if (!task) continue;
+    if (task.status === 'completed' && task.output === undefined) {
+      throw new Error(
+        `deserializeAgentState: task "${task.id}" is marked completed but has no output`,
+      );
+    }
+    if (!agentTools[task.tool]) {
+      throw new Error(
+        `deserializeAgentState: unknown tool "${task.tool}" for task "${task.id}"`,
+      );
+    }
+  }
+  return { plan, trace, resumeFromTaskIndex };
+}
+
+/**
+ * Executes an `AgentPlan` sequentially, with optional mid-plan resumption.
+ *
+ * - Tasks at index < `resumeFrom` are **skipped** — their cached outputs are
+ *   preserved and used for placeholder resolution in subsequent tasks.
+ * - `{$task.N.output[.path]}` placeholders in each task's `input` are resolved
+ *   just before the task runs.
+ * - Observations are created under the currently active Langfuse context.
+ *
+ * @param plan - `AgentPlan` to execute (mutated in place with statuses/outputs)
+ * @param resumeFrom - Zero-based index to start executing from (default `0`)
+ * @returns The updated plan with all task statuses and outputs filled in
+ */
+export async function executorAgent(plan: AgentPlan, resumeFrom = 0): Promise<AgentPlan> {
+  return startActiveObservation('executorAgent', async (span: LangfuseSpan) => {
+    span.update({ input: { planId: plan.id, goal: plan.goal, resumeFrom } });
+    plan.status = 'executing';
+    plan.currentTaskIndex = resumeFrom;
+    const API_CALL_LIMIT = 50;
+    let apiCallCount = 0;
+    console.log(
+      `[executorAgent] Running plan "${plan.id}" from task ${resumeFrom} (${plan.tasks.length} total)`,
+    );
+
+    for (let i = 0; i < plan.tasks.length; i++) {
+      const task = plan.tasks[i];
+      plan.currentTaskIndex = i;
+
+      if (i < resumeFrom) {
+        console.log(`[executorAgent] Skipping cached task "${task.id}" (index ${i})`);
+        continue;
+      }
+
+      if (apiCallCount >= API_CALL_LIMIT) {
+        plan.status = 'failed';
+        span.update({
+          statusMessage: `API call limit (${API_CALL_LIMIT}) reached`,
+          level: 'ERROR',
+          output: plan,
+        });
+        break;
+      }
+
+      // Resolve {$task.N.output.path} placeholders against previous outputs
+      const previousOutputs = extractTaskOutputs({ ...plan, tasks: plan.tasks.slice(0, i) });
+      try {
+        task.input = resolveTaskInput(task.input, previousOutputs);
+      } catch (err) {
+        task.status = 'failed';
+        task.error = `Placeholder resolution failed: ${(err as Error).message}`;
+        task.completedAt = Date.now();
+        apiCallCount++;
+        continue;
+      }
+
+      task.status = 'in-progress';
+      task.startedAt = Date.now();
+
+      const tool = agentTools[task.tool];
+      if (!tool) {
+        task.status = 'failed';
+        task.error = `Unknown tool: "${task.tool}"`;
+        task.completedAt = Date.now();
+        console.error(`[executorAgent] Unknown tool "${task.tool}" for task "${task.id}"`);
+        apiCallCount++;
+        continue;
+      }
+
+      try {
+        task.output = await tool.execute(task.input, span);
+        task.status = 'completed';
+        task.completedAt = Date.now();
+        console.log(`[executorAgent] Completed task "${task.id}"`);
+      } catch (err) {
+        task.status = 'failed';
+        task.error = err instanceof Error ? err.message : String(err);
+        task.completedAt = Date.now();
+        console.error(`[executorAgent] Task "${task.id}" failed:`, task.error);
+      }
+      apiCallCount++;
+    }
+
+    if (plan.status !== 'failed') {
+      plan.status = plan.tasks.every((t) => t.status === 'completed') ? 'completed' : 'failed';
+      plan.currentTaskIndex = plan.tasks.length;
+    }
+    span.update({ output: { planStatus: plan.status } });
+    return plan;
+  });
+}
+
+/**
+ * Generates an initial `AgentPlan` from a user query by running a query
+ * refinement step to clarify the intent.
+ *
+ * @param userQuery - Raw user query string
+ * @param context - Arbitrary context passed through to the plan (e.g. `{ userToken }`)
+ * @returns An `AgentPlan` with the `queryRefinement` task executed
+ */
+export async function plannerAgent(
+  userQuery: string,
+  context: Record<string, unknown> = {},
+): Promise<AgentPlan> {
+  const plan: AgentPlan = {
+    id: `plan-${Date.now()}`,
+    goal: userQuery,
+    status: 'planning',
+    currentTaskIndex: 0,
+    context,
+    metadata: { createdAt: Date.now(), userQuery },
+    tasks: [
+      {
+        id: 'task-planning-1',
+        description: 'Refine and clarify user query',
+        tool: 'queryRefinement',
+        input: { userInput: userQuery, userToken: context['userToken'] },
+        status: 'pending',
+      },
+    ],
+  };
+  return executorAgent(plan);
+}
+
+/**
+ * Resumes an agent plan from the task index stored in `state.resumeFromTaskIndex`.
+ *
+ * Validates the state, then delegates to `executorAgent` which skips all tasks
+ * before the resume index (using their cached outputs for placeholder resolution).
+ *
+ * @param state - Serialized `AgentState` (e.g. from `serializeAgentState`)
+ * @returns The completed plan with all outputs filled in
+ * @throws Error if state validation fails
+ */
+export async function resumeAgentFromTrace(state: AgentState): Promise<AgentPlan> {
+  const validatedState = deserializeAgentState(state);
+  console.log(
+    `[resumeAgentFromTrace] Resuming plan "${validatedState.plan.id}" from task ${validatedState.resumeFromTaskIndex}`,
+  );
+  return executorAgent(validatedState.plan, validatedState.resumeFromTaskIndex);
+}
+
+/**
+ * Internal Agent interface — kept for compatibility with the object-based agent
+ * pattern.  Prefer `plannerAgent()` / `executorAgent()` for new code.
+ * @internal
+ */
 export interface Agent {
   id: string;
   name: string;
@@ -305,19 +543,23 @@ export interface Agent {
 }
 
 /**
- * Example stub agentic flow entry point
- * Extend this function for custom agentic orchestration
+ * Stub agentic flow entry point for custom orchestration.
+ * For new code, prefer `executorAgent(plan)` instead.
  */
 export async function runAgenticFlow(rootSpan: LangfuseSpan, plan: AgentPlan): Promise<AgentPlan> {
-  // Iterate through tasks, select tools, execute, and update status
   for (const task of plan.tasks) {
-    task.status = "in-progress";
+    task.status = 'in-progress';
+    const tool = agentTools[task.tool];
+    if (!tool) {
+      task.status = 'failed';
+      task.error = `Unknown tool: "${task.tool}"`;
+      continue;
+    }
     try {
-      const tool = task.tool;
       task.output = await tool.execute(task.input, rootSpan);
-      task.status = "completed";
+      task.status = 'completed';
     } catch (err) {
-      task.status = "failed";
+      task.status = 'failed';
       task.output = err;
     }
   }
@@ -354,8 +596,9 @@ export async function kimiChatCompletion({
 	const chatMessages: ChatCompletionMessageParam[] = systemPrompt
 		? [{ role: 'system', content: systemPrompt } as ChatCompletionMessageParam, ...messages]
 		: messages;
+	let response;
 	try {
-		const response = await client.chat.completions.create({
+		response = await client.chat.completions.create({
 			model,
 			messages: chatMessages,
 			temperature,
@@ -365,11 +608,13 @@ export async function kimiChatCompletion({
 		// Return the full response for tracing
 		return response.choices[0].message?.content?.trim() || '';
 	} catch (error: unknown) {
+		console.error('Error in kimiChatCompletion:', error);
+		console.error('Related response: ', response);
 		throw new Error(
 		typeof error === 'object' && error !== null && 'response' in error
 			// @ts-expect-error: error shape from OpenAI SDK
-			? error?.response?.data?.error?.message || 'OpenAI API error'
-			: (error as Error).message || 'OpenAI API error'
+			? error?.response?.data?.error?.message || 'Kimi OpenAI API error'
+			: (error as Error).message || 'Kimi OpenAI API error'
 		);
 	}
 }
