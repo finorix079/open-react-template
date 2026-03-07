@@ -4,7 +4,7 @@
  * planner execution loop.
  */
 import { NextResponse } from 'next/server';
-import { dynamicApiRequest, FanOutRequest } from '@/services/apiService';
+import { FanOutRequest } from '@/services/apiService';
 import { findApiParameters } from '@/services/apiSchemaLoader';
 import { SavedTask } from '@/services/taskService';
 import { getAllMatchedApis, getTopKResults, RequestContext } from '@/services/chatPlannerService';
@@ -13,6 +13,7 @@ import { sendToPlanner } from './planner';
 import { sanitizePlannerResponse, containsPlaceholderReference, resolvePlaceholders } from './plannerUtils';
 import { serializeUsefulDataInOrder } from './messageUtils';
 import { validateNeedMoreActions } from './validators';
+import { apiService } from '@/ed_tools';
 
 /**
  * Extracts and merges useful data from a single API response into the running useful-data string.
@@ -558,11 +559,11 @@ export async function executeIterativePlanner(
 
             let apiResponse;
             try {
-              apiResponse = await dynamicApiRequest(
-                process.env.NEXT_PUBLIC_ELASTICDASH_API || '',
-                apiSchema,
+              apiResponse = await apiService({
+                baseUrl: process.env.NEXT_PUBLIC_ELASTICDASH_API || '',
+                schema: apiSchema,
                 userToken
-              );
+              });
             } catch (err: any) {
               console.warn(`⚠️  API call encountered an error (statusCode: ${err.statusCode}):`, err.message);
 
@@ -641,11 +642,11 @@ export async function executeIterativePlanner(
                 console.log(`  📤 Fan-out 调用 ${fanOutReq.fanOutParam}=${value}`);
                 let singleResult;
                 try {
-                  singleResult = await dynamicApiRequest(
-                    process.env.NEXT_PUBLIC_ELASTICDASH_API || '',
-                    singleValueSchema,
+                  singleResult = await apiService({
+                    baseUrl: process.env.NEXT_PUBLIC_ELASTICDASH_API || '',
+                    schema: singleValueSchema,
                     userToken
-                  );
+                  });
                 } catch (err: any) {
                   if (typeof err?.message === 'string' && err.message.includes('参数类型不匹配')) {
                     console.warn('参数类型不匹配，打回AI重写:', err.message);

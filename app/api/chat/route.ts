@@ -4,7 +4,7 @@
  * Business logic is delegated to the modules in this directory.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { clarifyAndRefineUserInput, handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
+import { handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
 import { openaiChatCompletion, serializeAgentState, resumeAgentFromTrace, plannerAgent, executorAgent, AgentPlan, AgentState } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
 // import { ElasticDashSpan, propagateAttributes, startActiveObservation } from "@elasticdash/tracing";
@@ -32,6 +32,7 @@ import { runPlannerWithInputs } from './plannerUtils';
 
 // Executor
 import { generateFinalAnswer, executeIterativePlanner } from './executor';
+import { queryRefinement } from '@/ed_tools';
 
 const chatHandlerWrapper = async (request: NextRequest) => {
   // Create request-local context to prevent race conditions
@@ -377,7 +378,10 @@ export async function chatHandler(
             ? `Previous context:\n${conversationContext}\n\nCurrent query: ${userMessage.content}`
             : userMessage.content;
 
-          const { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask } = await clarifyAndRefineUserInput(queryWithContext, userToken);
+          const { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask } = await queryRefinement({
+            userInput: queryWithContext, 
+            userToken
+          });
           // 设置原始finalDeliverable为refinedQuery，保证不被中间依赖覆盖
           if (!finalDeliverable) finalDeliverable = refinedQuery;
           console.log('\n📝 QUERY REFINEMENT RESULTS:');

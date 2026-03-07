@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { searchPokemon } from '@/services/pokemonService';
 import { getTeams, createTeam, deleteTeam, addPokemonToTeam } from '@/services/teamService';
+import { pokemonService } from '@/ed_tools';
 
 const TeamsPage = () => {
   const [teams, setTeams] = useState<any[]>([]);
@@ -45,7 +45,7 @@ const TeamsPage = () => {
 
   const handleSearchPokemons = async () => {
     try {
-      const results = await searchPokemon({ searchterm: searchTerm });
+      const results = await pokemonService({ searchterm: searchTerm });
       setSearchResults(results);
     } catch (error) {
       console.error('Failed to search pokemons:', error);

@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 import jaison from '@/utils/jaison';
+import { taskSelectorService } from '@/ed_tools';
 
 // Request-scoped context to prevent race conditions between concurrent requests
 export interface RequestContext {
@@ -24,27 +25,6 @@ const vectorizedDataApiPath = path.join(process.cwd(), 'src/doc/vectorized-data/
 const vectorizedData = JSON.parse(fs.readFileSync(vectorizedDataPath, 'utf-8'));
 const vectorizedDataTable = JSON.parse(fs.readFileSync(vectorizedDataTablePath, 'utf-8'));
 const vectorizedDataApi = JSON.parse(fs.readFileSync(vectorizedDataApiPath, 'utf-8'));
-
-// Function to find the top-k most similar API vectors
-function findTopKSimilarApi(queryEmbedding: number[], topK: number = 3, context?: RequestContext) {
-  return vectorizedDataApi
-    .map((item: any) => {
-      let tags: string[] = item.tags || [];
-      let summary = (item.summary || '').toLowerCase();
-      let similarity = cosineSimilarity(queryEmbedding, item.embedding);
-      const entityText = (context?.ragEntity || '').toLowerCase();
-      const tagHit = tags.some(t => entityText.includes(t.toLowerCase()) || t.toLowerCase().includes(entityText));
-      const summaryHit = summary && (entityText.includes(summary) || summary.includes(entityText));
-      if (tagHit) similarity += 0.15;
-      if (summaryHit) similarity += 0.10;
-      return {
-        ...item,
-        similarity,
-      };
-    })
-    .sort((a: any, b: any) => b.similarity - a.similarity)
-    .slice(0, topK);
-}
 
 // Function to find the top-k most similar table vectors
 function findTopKSimilarTable(queryEmbedding: number[], topK: number = 3, context?: RequestContext) {
@@ -127,7 +107,11 @@ export async function getAllMatchedApis({
     });
 
     if (intentType === 'MODIFY') {
-      const apiResults = findTopKSimilarApi(entityEmbedding, 10, context);
+      const apiResults = await taskSelectorService({
+        queryEmbedding: entityEmbedding, 
+        topK: 10, 
+        context
+      });
       console.log(`Found ${apiResults.length} APIs for entity "${entity}"`);
       apiResults.forEach((result: any) => {
         const existing = allMatchedApis.get(result.id);

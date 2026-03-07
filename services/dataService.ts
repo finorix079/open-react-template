@@ -1,7 +1,6 @@
 import { Client } from 'pg';
 import fs from 'fs';
 import path from 'path';
-import { recordToolCall } from 'elasticdash-test';
 
 const connectionString = process.env.NEXT_DB_CONNECTION_STRING;
 const sslKeyPath = path.join(process.cwd(), '.temp', 'InitialKey.pem');
@@ -42,7 +41,6 @@ export async function runSelectQuery(query: string): Promise<any> {
     const res = await client.query(query);
     const durationMs = Date.now() - startedAt;
     console.log(`[dataService] Query succeeded in ${durationMs}ms, rows=${res.rowCount}`);
-    recordToolCall('dataService', [query], res.rows);
     return res.rows;
   } catch (err) {
     const durationMs = Date.now() - startedAt;
@@ -54,7 +52,6 @@ export async function runSelectQuery(query: string): Promise<any> {
       detail: (err as any)?.detail,
       hint: (err as any)?.hint,
     });
-    recordToolCall('dataService', [query], { error: err });
     throw err;
   } finally {
     try {
@@ -63,7 +60,6 @@ export async function runSelectQuery(query: string): Promise<any> {
       console.log(`[dataService] Client closed. Total elapsed ${durationMs}ms`);
     } catch (closeErr) {
       console.error('[dataService] Error closing client', closeErr);
-      recordToolCall('dataService', [query], { error: closeErr });
     }
   }
 }

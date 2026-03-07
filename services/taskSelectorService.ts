@@ -4,7 +4,7 @@ import { openaiChatCompletion } from '@/utils/aiHandler';
 import fs from 'fs';
 import path from 'path';
 import { RequestContext } from "./chatPlannerService";
-// import { recordToolCall } from "elasticdash-test";
+import { taskSelectorService } from "@/ed_tools";
 
 export interface ReferenceTaskMatch {
   task?: SavedTask;
@@ -37,7 +37,6 @@ export function findTopKSimilarApi({ queryEmbedding, topK = 3, context }: TopKSi
       if (tagHit) similarity += 0.15;
       if (summaryHit) similarity += 0.10;
 
-      // recordToolCall('taskSelectorService', { queryEmbedding, topK, context }, { ...item, similarity });
       return {
         ...item,
         similarity,
@@ -169,7 +168,7 @@ export async function getAllMatchedApis({ entities, intentType, context }: { ent
 
     if (intentType === 'MODIFY') {
       // API retrieval remains available (needed for mutation steps)
-      const apiResults = findTopKSimilarApi({queryEmbedding: entityEmbedding as number[], topK: 10, context: context as any});
+      const apiResults = await taskSelectorService({queryEmbedding: entityEmbedding as number[], topK: 10, context: context as any});
       console.log(`Found ${apiResults.length} APIs for entity "${entity}"`);
       // console.log(`Found ${apiResults.length} APIs for entity "${entity}":`,
       //   apiResults.map((item: any) => ({ id: item.id, similarity: item.similarity.toFixed(3) }))

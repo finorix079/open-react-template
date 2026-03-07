@@ -1,11 +1,6 @@
 // --- Agentic Tool Definitions ---
-import { dynamicApiRequest } from '@/services/apiService';
-import { clarifyAndRefineUserInput } from '@/utils/queryRefinement';
-import { runSelectQuery } from '@/services/dataService';
-import { searchPokemon } from '@/services/pokemonService';
-import { findTopKSimilarApi } from '@/services/taskSelectorService';
 // Watchlist service (to manage user watchlist entries)
-import { watchlistAdd, watchlistRemove, watchlistList } from '@/services/watchlistService';
+import { watchlistAdd, watchlistRemove } from '@/services/watchlistService';
 import OpenAI from 'openai';
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { observeOpenAI } from "@langfuse/openai";
@@ -14,7 +9,6 @@ import { LangfuseObservation, LangfuseSpan, LangfuseTool } from "@langfuse/traci
 import { startActiveObservation } from "@langfuse/tracing";
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { RequestContext } from '@/services/chatPlannerService';
-import { recordToolCall } from 'elasticdash-test';
 import { apiService, dataService, pokemonService, queryRefinement, taskSelectorService, watchlistService } from '@/ed_tools';
 
 async function executeWithObservation(
@@ -30,7 +24,6 @@ async function executeWithObservation(
     const output = await fn();
     toolObs.update({ output });
     toolObs.end();
-    recordToolCall(toolName, input, output);
     return output;
   } catch (err) {
     toolObs
@@ -39,7 +32,6 @@ async function executeWithObservation(
 		statusMessage: (err as Error).message,
 	})
 	.end();
-    recordToolCall(toolName, input, err);
     throw err;
   }
 }
