@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { clarifyAndRefineUserInput, handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
-import { agentTools, openaiChatCompletion } from '@/utils/aiHandler';
+import { openaiChatCompletion, serializeAgentState, resumeAgentFromTrace, plannerAgent, executorAgent, AgentPlan, AgentState } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
 // import { ElasticDashSpan, propagateAttributes, startActiveObservation } from "@elasticdash/tracing";
 import { LangfuseSpan, propagateAttributes, startActiveObservation } from "@langfuse/tracing";
@@ -33,15 +33,8 @@ import { runPlannerWithInputs } from './plannerUtils';
 // Executor
 import { generateFinalAnswer, executeIterativePlanner } from './executor';
 
-import { planningAgent, executorAgent } from '@/utils/aiHandler';
-
-const handler = async (request: NextRequest) => {
+const chatHandlerWrapper = async (request: NextRequest) => {
   // Create request-local context to prevent race conditions
-  const requestContext: RequestContext = {
-    ragEntity: undefined,
-    flatUsefulDataMap: new Map(),
-    usefulDataArray: []
-  };
 
   let testCaseId = request.headers.get('x-reset-test-case') || '';
   let testCaseRunRecordId = request.headers.get('x-reset-test-case-run-record') || '';
@@ -59,10 +52,6 @@ const handler = async (request: NextRequest) => {
 
   logTestCaseHeadersToRoot(request.headers);
 
-  let usefulData = new Map();
-  let finalDeliverable = '';
-  // let parent: LangfuseSpan | null = null;
-  let output: any = null;
   let requestBody: any = null;
   try {
     let rawBody: string | undefined;
@@ -90,23 +79,67 @@ const handler = async (request: NextRequest) => {
     console.error('Failed to parse request body as JSON:', err);
     return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
   }
-  const { messages, sessionId: clientSessionId, isApproval: clientIsApproval } = requestBody;
 
-  // parent = startObservation('Customer Chat Request', {
-  //   input: { messages },
-  //   metadata: { sessionId: clientSessionId, name: 'Customer Chat Request' }
-  // });
-  // parent.updateTrace({ 
-  //   sessionId: clientSessionId 
-  // });
+  // Extract user token from Authorization header (optional)
+  const authHeader = request.headers.get('Authorization') || '';
+  const userToken = authHeader.startsWith('Bearer ') ? authHeader.replace('Bearer ', '') : '';
+  // console.log('userToken:', userToken);
 
-  // return tracer.startActiveSpan("handleChatRequest", async (span: Span) => {
+  console.log('request: ', request);
 
-  return startActiveObservation("handleChatRequest", async (span: LangfuseSpan) => {
+  return chatHandler({ requestBody, userToken, testCaseId, testCaseRunRecordId })
+  .then((output) => NextResponse.json(output))
+  .catch((err) => {
+      console.error('Error in chatHandler:', err);
+      const output = {
+        error: 'Internal server error'
+      }
+      // parent?.updateTrace({ output }); --- IGNORE ---
+      return NextResponse.json(output, { status: 500 });
+  });
+};
+
+export async function chatHandler(
+  {
+    requestBody, 
+    testCaseId, 
+    testCaseRunRecordId,
+    userToken = '',
+  }: {
+    requestBody: any, 
+    testCaseId?: string, 
+    testCaseRunRecordId?: string,
+    userToken: string
+  }): Promise<any> {
+
+  let output: any = null;
+  let usefulData = new Map();
+  let finalDeliverable = '';
+  const requestContext: RequestContext = {
+    ragEntity: undefined,
+    flatUsefulDataMap: new Map(),
+    usefulDataArray: []
+  };
+  return startActiveObservation("chatHandler", async (span: LangfuseSpan) => {
+    const { messages, sessionId: clientSessionId, isApproval: clientIsApproval } = requestBody;
+    const sessionId = clientSessionId || generateSessionId(messages);
+
+    span.updateTrace({
+      name: "chatHandler-" + sessionId, // Use client session ID if provided for better trace correlation
+    })
+    span.update({
+      input: {
+        requestBody, 
+        testCaseId, 
+        testCaseRunRecordId,
+        userToken
+      },
+    });
+
     span.updateTrace({ 
-      sessionId: clientSessionId,
+      sessionId: sessionId,
       metadata: { 
-        sessionId: clientSessionId, 
+        sessionId: sessionId, 
         testCaseId, 
         testCaseRunRecordId,
         body: requestBody
@@ -114,17 +147,33 @@ const handler = async (request: NextRequest) => {
     });
 
     try {
-      // Extract user token from Authorization header (optional)
-      const authHeader = request.headers.get('Authorization') || '';
-      const userToken = authHeader.startsWith('Bearer ') ? authHeader.replace('Bearer ', '') : '';
-      console.log('userToken:', userToken);
-
-
       console.log('\n💬 Received messages:', messages.length);
       console.log('\n💬 Received final message:', messages[messages.length - 1]);
+      console.log('process.env.NEXT_PUBLIC_POKEMON_API:', process.env.NEXT_PUBLIC_POKEMON_API);
+
+      // ------------------------------------------------------------------
+      // Agent Mid-Trace Replay: if the request carries a serialised
+      // AgentState, resume from the specified task index instead of running
+      // the full pipeline.
+      // ------------------------------------------------------------------
+      if (requestBody.agentState && typeof requestBody.resumeFromTaskIndex === 'number') {
+        console.log('🔁 Mid-trace replay requested from task index:', requestBody.resumeFromTaskIndex);
+        const incomingState: AgentState = {
+          ...requestBody.agentState,
+          resumeFromTaskIndex: requestBody.resumeFromTaskIndex,
+        };
+        const resumedPlan = await resumeAgentFromTrace(incomingState);
+        const replayAgentState = serializeAgentState(resumedPlan);
+        output = {
+          message: `Resumed from task ${requestBody.resumeFromTaskIndex}`,
+          agentState: replayAgentState,
+          executedTasks: resumedPlan.tasks,
+          planStatus: resumedPlan.status,
+        };
+        return output;
+      }
 
       // Use client-provided session ID if available, otherwise generate one
-      const sessionId = clientSessionId || generateSessionId(messages);
       console.log('📋 Session ID:', sessionId);
       console.log('📋 Client provided sessionId:', clientSessionId);
       console.log('📋 Pending plans:', Array.from(pendingPlans.keys()));
@@ -328,7 +377,12 @@ const handler = async (request: NextRequest) => {
             ? `Previous context:\n${conversationContext}\n\nCurrent query: ${userMessage.content}`
             : userMessage.content;
 
-          const { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask } = await clarifyAndRefineUserInput(queryWithContext, userToken);
+          const body = {
+            userInput: queryWithContext, 
+            userToken
+          };
+
+          const { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask } = await clarifyAndRefineUserInput(body.userInput, body.userToken);
           // 设置原始finalDeliverable为refinedQuery，保证不被中间依赖覆盖
           if (!finalDeliverable) finalDeliverable = refinedQuery;
           console.log('\n📝 QUERY REFINEMENT RESULTS:');
@@ -363,18 +417,8 @@ const handler = async (request: NextRequest) => {
           let actionablePlan;
           let plannerRawResponse;
 
-          // Use planningAgent for planning trace (optional, can be extended for more planning steps)
-          planningAgent.plan.tasks = [
-            {
-              id: '1',
-              description: 'Generate execution plan',
-              tool: agentTools['queryRefinement'],
-              input: { userInput: refinedQuery, userToken },
-              status: 'pending',
-            },
-          ];
-          // Run planning agent (trace will show planning phase)
-          await planningAgent.run(span);
+          // Use plannerAgent for planning trace (records a queryRefinement step for observability)
+          await plannerAgent(refinedQuery, { userToken });
 
           // --- Actual Plan Generation ---
           try {
@@ -530,48 +574,56 @@ const handler = async (request: NextRequest) => {
               return output;
             }
             console.log('checkpoint 3');
-            // Convert execution_plan steps to AgentTask objects with correct tool mapping
-            executorAgent.plan.tasks = actionablePlan.execution_plan.map((step: any, idx: number) => {
-              // Map API path/method to toolName
-              let toolName = '';
-              let inputPayload: any = step.api.requestBody || {};
+            // Build AgentPlan from execution steps and run via executorAgent function
+            const agentPlan: AgentPlan = {
+              id: `plan-${sessionId}-${Date.now()}`,
+              goal: refinedQuery,
+              status: 'planning',
+              currentTaskIndex: 0,
+              context: { userToken },
+              metadata: { sessionId, refinedQuery },
+              tasks: actionablePlan.execution_plan.map((step: any, idx: number) => {
+                // Map API path/method to toolName
+                let toolName = '';
+                let inputPayload: unknown = step.api.requestBody || {};
 
-              // SQL query execution
-              if (step.api.path === '/general/sql/query' && step.api.method === 'post') {
-                toolName = 'dataService';
-              }
-
-              // Watchlist operations
-              if (step.api.path === '/pokemon/watchlist') {
-                toolName = 'watchlistService';
-                if (step.api.method === 'post') {
-                  inputPayload = { action: 'add', payload: step.api.requestBody, userToken };
-                } else if (step.api.method === 'delete') {
-                  inputPayload = { action: 'remove', payload: step.api.requestBody, userToken };
-                } else if (step.api.method === 'get') {
-                  inputPayload = { action: 'list', userToken };
+                // SQL query execution
+                if (step.api.path === '/general/sql/query' && step.api.method === 'post') {
+                  toolName = 'dataService';
                 }
-              }
 
-              // Add more mappings as needed for other APIs
-              if (!toolName) {
-                throw new Error(`No tool mapping found for API path: ${step.api.path}, method: ${step.api.method}`);
-              }
-              return {
-                id: String(idx + 1),
-                description: step.description,
-                tool: agentTools[toolName],
-                input: inputPayload,
-                status: "pending"
-              };
-            });
+                // Watchlist operations
+                if (step.api.path === '/pokemon/watchlist') {
+                  toolName = 'watchlistService';
+                  if (step.api.method === 'post') {
+                    inputPayload = { action: 'add', payload: step.api.requestBody, userToken };
+                  } else if (step.api.method === 'delete') {
+                    inputPayload = { action: 'remove', payload: step.api.requestBody, userToken };
+                  } else if (step.api.method === 'get') {
+                    inputPayload = { action: 'list', userToken };
+                  }
+                }
+
+                // Add more mappings as needed for other APIs
+                if (!toolName) {
+                  throw new Error(`No tool mapping found for API path: ${step.api.path}, method: ${step.api.method}`);
+                }
+                return {
+                  id: String(idx + 1),
+                  description: step.description,
+                  tool: toolName,
+                  input: inputPayload,
+                  status: 'pending' as const,
+                };
+              }),
+            };
             console.log('checkpoint 4');
-            // Run the executor agent, passing the Langfuse span as parent observation
-            await executorAgent.run(span);
+            // Execute the plan using the new function-based executorAgent
+            const executedPlan = await executorAgent(agentPlan);
             console.log('checkpoint 5');
 
             // Build response from executed task outputs
-            const executedTasks = executorAgent.plan.tasks;
+            const executedTasks = executedPlan.tasks;
             const firstOutput = executedTasks[0]?.output;
 
             console.log('checkpoint 6');
@@ -601,6 +653,8 @@ const handler = async (request: NextRequest) => {
               planningDurationMs,
               usedReferencePlan: actionablePlan._from_reference_task || false,
               executedTasks,
+              /** Serialised agent state — pass back as `agentState` + `resumeFromTaskIndex` to replay from any task */
+              agentState: serializeAgentState(executedPlan),
             };
             return output;
           }
@@ -647,20 +701,31 @@ const handler = async (request: NextRequest) => {
       output = {
         error: 'Internal server error'
       };
-      // parent?.updateTrace({ output });
-      // return NextResponse.json(output, { status: 500 });
     }
     finally {
       // parent?.end();
+      const displayOutput = { ...output };
+      displayOutput.topKResults = displayOutput.topKResults ? displayOutput.topKResults.length : undefined; // Limit topKResults in logs for readability
+      console.log('Final output:', displayOutput);
       span.update({
-        input: messages,
         output: output
-      });
-      span.end();
+      })
+      .end();
 
-      return NextResponse.json(output);
+      // return NextResponse.json(output);
+      return output;
     }
-  });
-};
+  })
+  .then((result) => {
+    const displayResult = { ...result };
+    displayResult.topKResults = displayResult.topKResults ? displayResult.topKResults.length : undefined; // Limit topKResults in logs for readability
+    console.log('chatHandler completed with result:', displayResult);
+    return result;
+  })
+  .catch((err) => {
+    console.error('Error in chatHandler:', err);
+    return { error: 'Internal server error' };
+  });;
+}
 
-export const POST = handler;
+export const POST = chatHandlerWrapper;
