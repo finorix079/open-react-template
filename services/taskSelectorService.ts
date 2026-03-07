@@ -4,7 +4,7 @@ import { openaiChatCompletion } from '@/utils/aiHandler';
 import fs from 'fs';
 import path from 'path';
 import { RequestContext } from "./chatPlannerService";
-import { recordToolCall } from "elasticdash-test";
+// import { recordToolCall } from "elasticdash-test";
 
 export interface ReferenceTaskMatch {
   task?: SavedTask;
@@ -37,7 +37,7 @@ export function findTopKSimilarApi({ queryEmbedding, topK = 3, context }: TopKSi
       if (tagHit) similarity += 0.15;
       if (summaryHit) similarity += 0.10;
 
-      recordToolCall('taskSelectorService', { queryEmbedding, topK, context }, { ...item, similarity });
+      // recordToolCall('taskSelectorService', { queryEmbedding, topK, context }, { ...item, similarity });
       return {
         ...item,
         similarity,

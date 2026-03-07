@@ -1,6 +1,6 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import { prepareArgsForRequest, MappingResult } from './parameterMapper';
-import { recordToolCall } from 'elasticdash-test';
+// import { recordToolCall } from 'elasticdash-test';
 
 export interface FanOutRequest {
   needsFanOut: true;
@@ -62,13 +62,13 @@ export async function dynamicApiRequest(baseUrl: string, schema: any, userToken?
       // 检测 fan-out：路径参数要求标量，但收到数组
       if (mappingResult.fanOutDetected && mappingResult.fanOutParam && mappingResult.fanOutValues) {
         console.log(`🔄 检测到 fan-out 需求，返回 FanOutRequest`);
-        recordToolCall('fanOutDetection', [baseUrl, schema, userToken], {
-          needsFanOut: true,
-          fanOutParam: mappingResult.fanOutParam,
-          fanOutValues: mappingResult.fanOutValues,
-          baseSchema: schema,
-          mappedParams: pathParams,
-        });
+        // recordToolCall('fanOutDetection', [baseUrl, schema, userToken], {
+        //   needsFanOut: true,
+        //   fanOutParam: mappingResult.fanOutParam,
+        //   fanOutValues: mappingResult.fanOutValues,
+        //   baseSchema: schema,
+        //   mappedParams: pathParams,
+        // });
         return {
           needsFanOut: true,
           fanOutParam: mappingResult.fanOutParam,
@@ -120,7 +120,7 @@ export async function dynamicApiRequest(baseUrl: string, schema: any, userToken?
     // Send the request
     const response = await axios(config);
 
-    recordToolCall('fanOutDetection', [baseUrl, schema, userToken], response.data);
+    // recordToolCall('fanOutDetection', [baseUrl, schema, userToken], response.data);
     return response.data;
   } catch (error) {
     console.error('Error in dynamicApiRequest:', error);

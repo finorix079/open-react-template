@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { recordToolCall } from 'elasticdash-test';
+// import { recordToolCall } from 'elasticdash-test';
 
 const API_BASE_URL = `${process.env.NEXT_PUBLIC_ELASTICDASH_API}/pokemon`;
 
@@ -72,7 +72,7 @@ export const searchPokemon = async ({
     }
 
     const data = await response.json();
-    recordToolCall('pokemonService', [searchterm, page, sortby, filter], data);
+    // recordToolCall('pokemonService', [searchterm, page, sortby, filter], data);
     return data;
   } catch (error: any) {
     console.warn("Error searching Pokémon:", error);
