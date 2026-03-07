@@ -1,5 +1,3 @@
-import { appendLogLine } from "@/services/logger";
-
 export interface TaskStep {
   stepOrder: number;
   stepType: number;
@@ -72,7 +70,6 @@ export async function fetchTaskList(token: string): Promise<SavedTask[]> {
     },
   });
 
-  appendLogLine(`taskService - GET /task/list: status=${res.status}`);
 
   if (!res.ok) {
     const text = await res.text();
@@ -98,7 +95,6 @@ export async function saveTask(payload: TaskPayload, token: string): Promise<voi
     body: JSON.stringify(payload),
   });
 
-  appendLogLine(`taskService - POST /task: status=${res.status}`);
 
   if (!res.ok) {
     const text = await res.text();

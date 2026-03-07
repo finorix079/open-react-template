@@ -1,7 +1,7 @@
 import { getAllMatchedApis, getTopKResults, fetchPromptFile } from '@/services/chatPlannerService';
 import { openaiChatCompletion, kimiChatCompletion } from '@/utils/aiHandler';
-import fs from 'fs';
-import path from 'path';
+// import fs from 'fs';
+// import path from 'path';
 
 /**
  * sendToPlanner: 自主工作流程 - 始终使用 LLM 意图分析 + RAG API 检索 + 单步计划生成
@@ -226,7 +226,7 @@ Begin planning:`;
         });
       }
 
-      fs.writeFileSync(path.join(process.cwd(), 'rag_apis.json'), JSON.stringify(ragApis, null, 2), 'utf-8');
+      // fs.writeFileSync(path.join(process.cwd(), 'rag_apis.json'), JSON.stringify(ragApis, null, 2), 'utf-8');
 
       const ragApiDesc = JSON.stringify(ragApis, null, 2);
 

@@ -2,7 +2,6 @@ import { cosineSimilarity } from '@/src/utils/cosineSimilarity';
 import { openaiChatCompletion } from '@/utils/aiHandler';
 import fs from 'fs';
 import path from 'path';
-import { appendLogLine } from '@/services/logger';
 
 import jaison from '@/utils/jaison';
 import { taskSelectorService } from '@/ed_tools';
@@ -19,16 +18,28 @@ export interface Message {
   content: string;
 }
 
-// Load vectorized data
-const vectorizedDataPath = path.join(process.cwd(), 'src/doc/vectorized-data/vectorized-data.json');
-const vectorizedDataTablePath = path.join(process.cwd(), 'src/doc/vectorized-data/table/vectorized-data.json');
-const vectorizedDataApiPath = path.join(process.cwd(), 'src/doc/vectorized-data/api/vectorized-data.json');
-const vectorizedData = JSON.parse(fs.readFileSync(vectorizedDataPath, 'utf-8'));
-const vectorizedDataTable = JSON.parse(fs.readFileSync(vectorizedDataTablePath, 'utf-8'));
-const vectorizedDataApi = JSON.parse(fs.readFileSync(vectorizedDataApiPath, 'utf-8'));
+// Lazy-loaded vectorized data — paths resolved at call time, not at module load,
+// so Turbopack does not execute fs.readFileSync during static analysis.
+let _vectorizedData: any = null;
+let _vectorizedDataTable: any = null;
+let _vectorizedDataApi: any = null;
+
+/** Returns cached vectorized data, loading from disk on the first call. */
+function getVectorizedData() {
+  if (!_vectorizedData) {
+    const vectorizedDataPath = path.join(process.cwd(), 'src/doc/vectorized-data/vectorized-data.json');
+    const vectorizedDataTablePath = path.join(process.cwd(), 'src/doc/vectorized-data/table/vectorized-data.json');
+    const vectorizedDataApiPath = path.join(process.cwd(), 'src/doc/vectorized-data/api/vectorized-data.json');
+    _vectorizedData = JSON.parse(fs.readFileSync(vectorizedDataPath, 'utf-8'));
+    _vectorizedDataTable = JSON.parse(fs.readFileSync(vectorizedDataTablePath, 'utf-8'));
+    _vectorizedDataApi = JSON.parse(fs.readFileSync(vectorizedDataApiPath, 'utf-8'));
+  }
+  return { vectorizedData: _vectorizedData, vectorizedDataTable: _vectorizedDataTable, vectorizedDataApi: _vectorizedDataApi };
+}
 
 // Function to find the top-k most similar table vectors
 function findTopKSimilarTable(queryEmbedding: number[], topK: number = 3, context?: RequestContext) {
+  const { vectorizedDataTable } = getVectorizedData();
   return vectorizedDataTable
     .map((item: any) => {
       let tags: string[] = item.tags || [];
@@ -74,7 +85,6 @@ export async function getAllMatchedApis({
         input: entity,
       }),
     });
-    appendLogLine(`chatPlannerService - POST /v1/embeddings for entity "${entity}": status=${embeddingResponse.status}`);
     if (!embeddingResponse.ok) {
       console.warn(`Failed to generate embedding for entity "${entity}"`);
       continue;

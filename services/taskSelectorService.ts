@@ -5,17 +5,27 @@ import fs from 'fs';
 import path from 'path';
 import { RequestContext } from "./chatPlannerService";
 import { taskSelectorService } from "@/ed_tools";
-import { appendLogLine } from "@/services/logger";
 
 export interface ReferenceTaskMatch {
   task?: SavedTask;
   score?: number;
 }
 
-const vectorizedDataTablePath = path.join(process.cwd(), 'src/doc/vectorized-data/table/vectorized-data.json');
-const vectorizedDataApiPath = path.join(process.cwd(), 'src/doc/vectorized-data/api/vectorized-data.json');
-const vectorizedDataTable = JSON.parse(fs.readFileSync(vectorizedDataTablePath, 'utf-8'));
-const vectorizedDataApi = JSON.parse(fs.readFileSync(vectorizedDataApiPath, 'utf-8'));
+// Lazy-loaded vectorized data — loaded on first call to avoid module-level fs
+// reads that would cause Turbopack to fail when analyzing server-only modules.
+let _vectorizedDataTable: any = null;
+let _vectorizedDataApi: any = null;
+
+/** Returns cached vectorized data, loading from disk on the first call. */
+function getVectorizedData() {
+  if (!_vectorizedDataTable) {
+    const vectorizedDataTablePath = path.join(process.cwd(), 'src/doc/vectorized-data/table/vectorized-data.json');
+    const vectorizedDataApiPath = path.join(process.cwd(), 'src/doc/vectorized-data/api/vectorized-data.json');
+    _vectorizedDataTable = JSON.parse(fs.readFileSync(vectorizedDataTablePath, 'utf-8'));
+    _vectorizedDataApi = JSON.parse(fs.readFileSync(vectorizedDataApiPath, 'utf-8'));
+  }
+  return { vectorizedDataTable: _vectorizedDataTable, vectorizedDataApi: _vectorizedDataApi };
+}
 
 // Function to find the top-k most similar API vectors
 export interface TopKSimilarApiInput {
@@ -25,6 +35,7 @@ export interface TopKSimilarApiInput {
 }
 
 export function findTopKSimilarApi({ queryEmbedding, topK = 3, context }: TopKSimilarApiInput) {
+  const { vectorizedDataApi } = getVectorizedData();
   return vectorizedDataApi
     .map((item: any) => {
       let tags: string[] = item.tags || [];
@@ -49,6 +60,7 @@ export function findTopKSimilarApi({ queryEmbedding, topK = 3, context }: TopKSi
 
 // Function to find the top-k most similar table vectors
 function findTopKSimilarTable(queryEmbedding: number[], topK: number = 3, context?: RequestContext) {
+  const { vectorizedDataTable } = getVectorizedData();
   return vectorizedDataTable
     .map((item: any) => {
       let tags: string[] = item.tags || [];
@@ -150,7 +162,6 @@ export async function getAllMatchedApis({ entities, intentType, context }: { ent
         input: entity,
       }),
     });
-    appendLogLine(`taskSelectorService - POST /v1/embeddings for entity "${entity}": status=${embeddingResponse.status}`);
     if (!embeddingResponse.ok) {
       console.warn(`Failed to generate embedding for entity "${entity}"`);
       continue;

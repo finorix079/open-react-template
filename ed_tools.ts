@@ -7,6 +7,34 @@ import { watchlistAdd, watchlistList, watchlistRemove } from "./services/watchli
 import { clarifyAndRefineUserInput } from "./utils/queryRefinement";
 
 // Fully covered
+export const dataService = async (input: any) => {
+    const { query } = input as { query: string };
+    return await runSelectQuery(query)
+    .then(async (res: any) => {
+        console.log('Data Service Result:', res);
+        try {
+            const { recordToolCall } = await import("elasticdash-test");
+            recordToolCall('dataService', input, res);
+        }
+        catch (logError) {
+            console.error('Logging Error in Data Service:', logError);
+        }
+        return res;
+    })
+    .catch(async (err: any) => {
+        console.error('Data Service Error:', err);
+        try {
+            const { recordToolCall } = await import("elasticdash-test");
+            recordToolCall('dataService', input, err);
+        }
+        catch (logError) {
+            console.error('Logging Error in Data Service:', logError);
+        }
+        throw err;
+    });
+};
+
+// Fully covered
 export const apiService = async (input: any) => {
     const typedInput = input as { baseUrl: string; schema: any; userToken?: string };
     return await dynamicApiRequest(typedInput.baseUrl, typedInput.schema, typedInput.userToken)
@@ -60,34 +88,6 @@ export const queryRefinement = async (input: any) => {
         }
         throw err;
     }); 
-};
-
-// Fully covered
-export const dataService = async (input: any) => {
-    const typedInput = input as { query: string };
-    return await runSelectQuery(typedInput.query)
-    .then(async (res: any) => {
-        console.log('Data Service Result:', res);
-        try {
-            const { recordToolCall } = await import("elasticdash-test");
-            recordToolCall('dataService', input, res);
-        }
-        catch (logError) {
-            console.error('Logging Error in API Service:', logError);
-        }
-        return res;
-    })
-    .catch(async (err: any) => {
-        console.error('Data Service Error:', err);
-        try {
-            const { recordToolCall } = await import("elasticdash-test");
-            recordToolCall('dataService', input, err);
-        }
-        catch (logError) {
-            console.error('Logging Error in API Service:', logError);
-        }
-        throw err;
-    });
 };
 
 // Fully covered

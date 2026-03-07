@@ -1,5 +1,3 @@
-import { appendLogLine } from "@/services/logger";
-
 export const login = async (username: string, password: string) => {
   const response = await fetch(`${process.env.NEXT_PUBLIC_ELASTICDASH_API}/auth/login`, {
     method: "POST",
@@ -9,7 +7,6 @@ export const login = async (username: string, password: string) => {
     body: JSON.stringify({ username, password }),
   });
 
-  appendLogLine(`authService - POST /auth/login: status=${response.status}`);
 
   if (!response.ok) {
     throw new Error("Login failed");
@@ -25,7 +22,6 @@ export const validateToken = async (token: string) => {
     },
   });
 
-  appendLogLine(`authService - GET /user/account: status=${response.status}`);
 
   if (!response.ok) {
     throw new Error("Token validation failed");

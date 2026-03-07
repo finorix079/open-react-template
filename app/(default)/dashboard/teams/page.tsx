@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getTeams, createTeam, deleteTeam, addPokemonToTeam } from '@/services/teamService';
-import { pokemonService } from '@/ed_tools';
+import { searchPokemon } from '@/services/pokemonService';
 
 const TeamsPage = () => {
   const [teams, setTeams] = useState<any[]>([]);
@@ -45,7 +45,7 @@ const TeamsPage = () => {
 
   const handleSearchPokemons = async () => {
     try {
-      const results = await pokemonService({ searchterm: searchTerm });
+      const results = await searchPokemon({ searchterm: searchTerm });
       setSearchResults(results);
     } catch (error) {
       console.error('Failed to search pokemons:', error);

@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { appendLogLine } from '@/services/logger';
 
 const API_BASE_URL = `${process.env.NEXT_PUBLIC_ELASTICDASH_API}/pokemon`;
 
@@ -67,7 +66,6 @@ export const searchPokemon = async ({
       }
     );
 
-    appendLogLine(`pokemonService - POST /pokemon/search: status=${response.status}`);
 
     if (!response.ok) {
       throw new Error("Pokémon not found");
@@ -96,7 +94,6 @@ export const searchMove = async ({ searchterm = '', page = 0 }: { searchterm?: s
         }),
       }
     );
-    appendLogLine(`pokemonService - POST /pokemon/move/search: status=${response.status}`);
 
     if (!response.ok) {
       throw new Error("Move not found");
@@ -112,7 +109,6 @@ export const searchMove = async ({ searchterm = '', page = 0 }: { searchterm?: s
 export const searchBerry = async ({ query = '', page = 0 }: { query: string; page: number }) => {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_ELASTICDASH_API}/berry/search?searchterm=${query.toLowerCase()}&page=${page}`);
-    appendLogLine(`pokemonService - GET /berry/search: status=${response.status}`);
     if (!response.ok) {
       throw new Error("Berry not found");
     }
@@ -138,7 +134,6 @@ export const searchAbility = async ({ searchterm = '', page = 0 }: { searchterm?
         }),
       }
     );
-    appendLogLine(`pokemonService - POST /pokemon/ability/search: status=${response.status}`);
 
     if (!response.ok) {
       throw new Error("Ability not found");
@@ -153,7 +148,6 @@ export const searchAbility = async ({ searchterm = '', page = 0 }: { searchterm?
 export const fetchPokemonDetails = async (id: number) => {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_ELASTICDASH_API}/pokemon/details/${id}`);
-    appendLogLine(`pokemonService - GET /pokemon/details/${id}: status=${response.status}`);
     if (!response.ok) {
       throw new Error("Failed to fetch Pokémon details");
     }

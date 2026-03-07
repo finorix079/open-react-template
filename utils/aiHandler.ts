@@ -2,7 +2,6 @@
 // Watchlist service (to manage user watchlist entries)
 import { watchlistAdd, watchlistRemove } from '@/services/watchlistService';
 import OpenAI from 'openai';
-import { appendLogLine } from '@/services/logger';
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { observeOpenAI } from "@langfuse/openai";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
@@ -599,10 +598,8 @@ export async function kimiChatCompletion({
 			...(sessionId ? { observationOptions: { session: sessionId } } : {}),
 		});
 		const content = response.choices[0].message?.content?.trim() || '';
-		appendLogLine(`kimiChatCompletion - model=${model} messages=${chatMessages.length} tokens=${response.usage?.total_tokens ?? 'N/A'} status=success`);
 		return content;
 	} catch (error: unknown) {
-		appendLogLine(`kimiChatCompletion - model=${model} status=error error=${typeof error === 'object' && error !== null ? (error as Error).message : String(error)}`);
 		console.error('Error in kimiChatCompletion:', error);
 		console.error('Related response: ', response);
 		throw new Error(
@@ -656,10 +653,8 @@ export async function openaiChatCompletionOriginal({
 			...(sessionId ? { observationOptions: { session: sessionId } } : {}),
 		});
 		const content = response.choices[0].message?.content?.trim() || '';
-		appendLogLine(`openaiChatCompletion - model=${model} messages=${chatMessages.length} tokens=${response.usage?.total_tokens ?? 'N/A'} status=success`);
 		return content;
 	} catch (error: unknown) {
-		appendLogLine(`openaiChatCompletion - model=${model} status=error error=${typeof error === 'object' && error !== null ? (error as Error).message : String(error)}`);
 		throw new Error(
 		typeof error === 'object' && error !== null && 'response' in error
 			// @ts-expect-error: error shape from OpenAI SDK

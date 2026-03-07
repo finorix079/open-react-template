@@ -27,11 +27,11 @@
     "elasticdash-test": "file:../elasticdash-test-js",
     "next": "15.1.11",
     "openai": "^6.16.0",
-    "pg": "^8.16.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "server-only": "^0.0.1",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3"
   },

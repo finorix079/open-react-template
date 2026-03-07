@@ -1,9 +1,26 @@
-import { Client } from 'pg';
-import fs from 'fs';
-import path from 'path';
+export async function accessDatabase(token: string, query: string): Promise<any> {
+  const baseUrl = process.env.NEXT_PUBLIC_ELASTICDASH_API || '';
+  const url = `${baseUrl}/general/sql/query`;
 
-const connectionString = process.env.NEXT_DB_CONNECTION_STRING;
-const sslKeyPath = path.join(process.cwd(), '.temp', 'InitialKey.pem');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ query }),
+  });
+
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || 'Failed to fetch task list');
+  }
+
+  // Response shape: { success: true, result: { rows: [...], rowCount: N } }
+  const data = await res.json();
+  return data;
+}
 
 export async function runSelectQuery(query: string): Promise<any> {
   const startedAt = Date.now();
@@ -12,36 +29,13 @@ export async function runSelectQuery(query: string): Promise<any> {
     throw new Error('Only SELECT queries are allowed.');
   }
 
-  if (!connectionString) {
-    throw new Error('Database connection string is missing.');
-  }
-
-  console.log('[dataService] Database connection string found, initializing client');
-  let sslConfig = undefined;
-  if (fs.existsSync(sslKeyPath)) {
-    sslConfig = {
-      rejectUnauthorized: false,
-      key: fs.readFileSync(sslKeyPath)
-    };
-    console.log('[dataService] SSL configuration loaded from', sslKeyPath);
-  }
-
-  const client = new Client({
-    connectionString,
-    ssl: sslConfig,
-    // Add query timeout (ms) to avoid silent hangs; adjust as needed
-    query_timeout: 60000,
-  });
-
-  console.log('[dataService] PostgreSQL client initialized, connecting to database');
-
   try {
-    await client.connect();
-    console.log('[dataService] Connected. Executing query...');
-    const res = await client.query(query);
+    const data = await accessDatabase('', query);
     const durationMs = Date.now() - startedAt;
-    console.log(`[dataService] Query succeeded in ${durationMs}ms, rows=${res.rowCount}`);
-    return res.rows;
+    const rows = data?.result?.rows ?? [];
+    const rowCount = data?.result?.rowCount ?? rows.length;
+    console.log(`[dataService] Query succeeded in ${durationMs}ms, rowCount=${rowCount}`);
+    return rows;
   } catch (err) {
     const durationMs = Date.now() - startedAt;
     console.error('[dataService] Query failed', {
@@ -53,13 +47,5 @@ export async function runSelectQuery(query: string): Promise<any> {
       hint: (err as any)?.hint,
     });
     throw err;
-  } finally {
-    try {
-      await client.end();
-      const durationMs = Date.now() - startedAt;
-      console.log(`[dataService] Client closed. Total elapsed ${durationMs}ms`);
-    } catch (closeErr) {
-      console.error('[dataService] Error closing client', closeErr);
-    }
   }
 }

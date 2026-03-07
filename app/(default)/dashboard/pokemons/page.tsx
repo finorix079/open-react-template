@@ -8,7 +8,7 @@ import {
   removeFromWatchlist,
 } from "@/services/pokemonService";
 import { getTypeClass } from "@/services/typeStyleService";
-import { pokemonService } from "@/ed_tools";
+import { searchPokemon } from "@/services/pokemonService";
 
 const PokemonPageContent = () => {
   const router = useRouter();
@@ -23,7 +23,7 @@ const PokemonPageContent = () => {
   const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
-    pokemonService({ searchterm: "", page: 0 })
+    searchPokemon({ searchterm: "", page: 0 })
       .then((data) => {
         console.log("Fetched Pokémon data:", data);
         let pokemonList = [];
@@ -66,7 +66,7 @@ const PokemonPageContent = () => {
     updateUrl(search, 0);
     try {
       setLastSearch(search);
-      const data = await pokemonService({ searchterm: search, page: 0 });
+      const data = await searchPokemon({ searchterm: search, page: 0 });
       let pokemonList = [];
       let totalPages = 1;
       if (data.success) {
@@ -84,7 +84,7 @@ const PokemonPageContent = () => {
     if (newPage < 0 || newPage >= totalPages) return;
     updateUrl(lastSearch || "", newPage);
     try {
-      const data = await pokemonService({ searchterm: lastSearch || "", page: newPage });
+      const data = await searchPokemon({ searchterm: lastSearch || "", page: newPage });
       let pokemonList = [];
       if (data.success) {
         pokemonList = data.result.results;
