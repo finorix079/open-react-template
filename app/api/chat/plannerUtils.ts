@@ -3,7 +3,7 @@
  * Functions for building and sanitizing execution plans, including reference-task fast-path,
  * SQL generation, placeholder resolution, and JSON sanitization.
  */
-const jaison = require('jaison');
+import jaison from '@/utils/jaison';
 import { RequestContext } from '@/services/chatPlannerService';
 import { kimiChatCompletion, openaiChatCompletion } from '@/utils/aiHandler';
 import { SavedTask } from '@/services/taskService';
