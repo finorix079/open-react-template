@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { RequestContext } from "./chatPlannerService";
 import { taskSelectorService } from "@/ed_tools";
+import { appendLogLine } from "@/services/logger";
 
 export interface ReferenceTaskMatch {
   task?: SavedTask;
@@ -149,6 +150,7 @@ export async function getAllMatchedApis({ entities, intentType, context }: { ent
         input: entity,
       }),
     });
+    appendLogLine(`taskSelectorService - POST /v1/embeddings for entity "${entity}": status=${embeddingResponse.status}`);
     if (!embeddingResponse.ok) {
       console.warn(`Failed to generate embedding for entity "${entity}"`);
       continue;

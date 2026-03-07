@@ -2,6 +2,7 @@ import { cosineSimilarity } from '@/src/utils/cosineSimilarity';
 import { openaiChatCompletion } from '@/utils/aiHandler';
 import fs from 'fs';
 import path from 'path';
+import { appendLogLine } from '@/services/logger';
 
 import jaison from '@/utils/jaison';
 import { taskSelectorService } from '@/ed_tools';
@@ -73,6 +74,7 @@ export async function getAllMatchedApis({
         input: entity,
       }),
     });
+    appendLogLine(`chatPlannerService - POST /v1/embeddings for entity "${entity}": status=${embeddingResponse.status}`);
     if (!embeddingResponse.ok) {
       console.warn(`Failed to generate embedding for entity "${entity}"`);
       continue;

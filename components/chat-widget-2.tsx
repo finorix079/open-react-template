@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { saveTask } from '@/services/taskService';
 import '../app/css/additional-styles/chat-widget.css';
 import Logo from './ui/logo';
+import { appendLogLine } from '@/services/logger';
 
 interface PlanStep {
   step_number?: number;
@@ -336,6 +337,7 @@ export default function ChatWidget2() {
 
       const data = await response.json();
       console.log('(Chat) API Response:', data);
+      appendLogLine(`Chat API - POST /api/chat: ${input.trim()}, Response: ${JSON.stringify(data)}`);
 
       const assistantMessage: Message = {
         role: 'assistant',
@@ -354,6 +356,7 @@ export default function ChatWidget2() {
         role: 'assistant',
         content: 'An error occurred while processing your request. Please try again.',
       };
+      appendLogLine(`Chat API - POST /api/chat error: ${typeof error === 'object' ? JSON.stringify(error) : String(error)}`);
       setMessages((prev) => cleanMessagesCodeBlocks([...prev, errorMessage]));
       console.warn('Error in sendMessage:', error);
     } finally {
@@ -417,6 +420,7 @@ export default function ChatWidget2() {
 
         const data = await response.json();
         console.log('(Chat) Approval Response:', data);
+        appendLogLine(`Chat API - POST /api/chat: ${input.trim()}, Response: ${JSON.stringify(data)}`);
 
         const assistantMessage: Message = {
           role: 'assistant',
@@ -435,6 +439,7 @@ export default function ChatWidget2() {
           role: 'assistant',
           content: 'An error occurred while processing your request. Please try again.',
         };
+        appendLogLine(`Chat API - POST /api/chat: ${input.trim()}, Response: ${typeof error === 'object' ? JSON.stringify(error) : String(error)}`);
         setMessages((prev) => cleanMessagesCodeBlocks([...prev, errorMessage]));
         console.warn('Error in handleApproval:', error);
       } finally {
@@ -460,9 +465,12 @@ export default function ChatWidget2() {
         });
 
         if (!response.ok) {
+          appendLogLine(`Chat API - POST /api/chat: ${input.trim()}, Response: ${await response.text()}`);
+
           throw new Error('Failed to process the request');
         }
 
+        appendLogLine(`Chat API - POST /api/chat: ${input.trim()}, Response: ${response.status} ${response.statusText}`);
         const data = await response.json();
         console.log('(Chat) Rejection Response:', data);
 
@@ -483,6 +491,7 @@ export default function ChatWidget2() {
           role: 'assistant',
           content: 'An error occurred while processing your request. Please try again.',
         };
+        appendLogLine(`Chat API - POST /api/chat rejection error: ${typeof error === 'object' ? JSON.stringify(error) : String(error)}`);
         setMessages((prev) => cleanMessagesCodeBlocks([...prev, errorMessage]));
         console.warn('Error in handleRejection:', error);
       } finally {
