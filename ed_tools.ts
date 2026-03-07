@@ -153,14 +153,24 @@ export const watchlistService = async (input: any) => {
     return await watchlistList(userToken)
     .then(async (res: any) => {
         console.log('Watchlist Service Result:', res);
-        const { recordToolCall } = await import("elasticdash-test");
-        recordToolCall('watchlistService', input, res);
+        try {
+            const { recordToolCall } = await import("elasticdash-test");
+            recordToolCall('watchlistService', input, res);
+        }
+        catch (logError) {
+            console.error('Logging Error in API Service:', logError);
+        }
         return res;
     })
     .catch(async (err: any) => {
         console.error('Watchlist Service Error:', err);
-        const { recordToolCall } = await import("elasticdash-test");
-        recordToolCall('watchlistService', input, err);
+        try {
+            const { recordToolCall } = await import("elasticdash-test");
+            recordToolCall('watchlistService', input, err);
+        }
+        catch (logError) {
+            console.error('Logging Error in API Service:', logError);
+        }
         throw err;
     });
 };
