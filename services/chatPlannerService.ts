@@ -3,7 +3,7 @@ import { openaiChatCompletion } from '@/utils/aiHandler';
 import fs from 'fs';
 import path from 'path';
 
-const jaison = require('jaison');
+import jaison from '@/utils/jaison';
 
 // Request-scoped context to prevent race conditions between concurrent requests
 export interface RequestContext {
