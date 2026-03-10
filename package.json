@@ -11,8 +11,6 @@
     "dashboard:ai": "NODE_OPTIONS='--import tsx/esm --require tsx/cjs --require tsconfig-paths/register' elasticdash dashboard"
   },
   "dependencies": {
-    "@elasticdash/openai": "^0.0.10",
-    "@elasticdash/otel": "^0.0.10",
     "@headlessui/react": "^2.2.0",
     "@langfuse/openai": "^4.6.1",
     "@langfuse/otel": "^4.6.1",

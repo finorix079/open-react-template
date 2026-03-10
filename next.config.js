@@ -11,8 +11,6 @@ const nextConfig = {
     '@grpc/grpc-js',
     '@langfuse/otel',
     '@langfuse/tracing',
-    '@elasticdash/otel',
-    '@elasticdash/tracing',
   ],
 };
 

@@ -7,7 +7,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
 import { openaiChatCompletion, serializeAgentState, resumeAgentFromTrace, plannerAgent, executorAgent, AgentPlan, AgentState } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
-// import { ElasticDashSpan, propagateAttributes, startActiveObservation } from "@elasticdash/tracing";
 import { LangfuseSpan, propagateAttributes, startActiveObservation } from "@langfuse/tracing";
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';

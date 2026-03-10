@@ -8,12 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@elasticdash/openai':
-        specifier: ^0.0.10
-        version: 0.0.10(@opentelemetry/api@1.9.0)
-      '@elasticdash/otel':
-        specifier: ^0.0.10
-        version: 0.0.10(@opentelemetry/api@1.9.0)(@opentelemetry/core@2.5.0(@opentelemetry/api@1.9.0))(@opentelemetry/exporter-trace-otlp-http@0.211.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.5.0(@opentelemetry/api@1.9.0))
       '@headlessui/react':
         specifier: ^2.2.0
         version: 2.2.0(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -119,29 +113,6 @@ packages:
   '@babel/helper-validator-identifier@7.28.5':
     resolution: {integrity: sha512-qSs4ifwzKJSV39ucNjsvc6WVHs6b7S03sOh2OcHF9UHfVPqWWALUsNUVzhSBiItjRZoLHx7nIarVjqKVusUZ1Q==}
     engines: {node: '>=6.9.0'}
-
-  '@elasticdash/core@0.0.10':
-    resolution: {integrity: sha512-kkBdb2/RdZ7mBp4Q0Buy28kx7k/AiAwKHN0Kj7jegNRl1V5XdVriQuJX6zVMk900yqScZ3N12emhiMWRS2wB5g==}
-    peerDependencies:
-      '@opentelemetry/api': ^1.9.0
-
-  '@elasticdash/openai@0.0.10':
-    resolution: {integrity: sha512-0JiwgdxP/sSRnc9a0/zPQbB9N9lbeyRGux/Eo3N2xju95halkd4V8p60jcEKcQb+733G7ydTWGQcLPdL5nd+Hw==}
-
-  '@elasticdash/otel@0.0.10':
-    resolution: {integrity: sha512-N4b+q0YvUXsC8JAfJAPQyZxQl0B/88VlM7H15+xomxwXdiNbIhoCQLjnhmAO9DhhB6FXNF7efXKKm4o8CUwuBA==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      '@opentelemetry/api': ^1.9.0
-      '@opentelemetry/core': ^2.0.1
-      '@opentelemetry/exporter-trace-otlp-http': '>=0.202.0 <1.0.0'
-      '@opentelemetry/sdk-trace-base': ^2.0.1
-
-  '@elasticdash/tracing@0.0.10':
-    resolution: {integrity: sha512-drbv9zWaTvFJjeWuPiRmpDAPg0tzOs/FvximyNANR3avRBrWzr+PNFX2N83LbWrdou1T1/g+807g33/+jr0UmA==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      '@opentelemetry/api': ^1.9.0
 
   '@emnapi/runtime@1.7.1':
     resolution: {integrity: sha512-PVtJr5CmLwYAU9PZDMITZoR5iAOShYREoR45EyyLrbntV50mdePTgUn4AmOw90Ifcj+x2kRjdzr1HP3RrNiHGA==}
@@ -2116,30 +2087,6 @@ snapshots:
       picocolors: 1.1.1
 
   '@babel/helper-validator-identifier@7.28.5': {}
-
-  '@elasticdash/core@0.0.10(@opentelemetry/api@1.9.0)':
-    dependencies:
-      '@opentelemetry/api': 1.9.0
-
-  '@elasticdash/openai@0.0.10(@opentelemetry/api@1.9.0)':
-    dependencies:
-      '@elasticdash/core': 0.0.10(@opentelemetry/api@1.9.0)
-      '@elasticdash/tracing': 0.0.10(@opentelemetry/api@1.9.0)
-    transitivePeerDependencies:
-      - '@opentelemetry/api'
-
-  '@elasticdash/otel@0.0.10(@opentelemetry/api@1.9.0)(@opentelemetry/core@2.5.0(@opentelemetry/api@1.9.0))(@opentelemetry/exporter-trace-otlp-http@0.211.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.5.0(@opentelemetry/api@1.9.0))':
-    dependencies:
-      '@elasticdash/core': 0.0.10(@opentelemetry/api@1.9.0)
-      '@opentelemetry/api': 1.9.0
-      '@opentelemetry/core': 2.5.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/exporter-trace-otlp-http': 0.211.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/sdk-trace-base': 2.5.0(@opentelemetry/api@1.9.0)
-
-  '@elasticdash/tracing@0.0.10(@opentelemetry/api@1.9.0)':
-    dependencies:
-      '@elasticdash/core': 0.0.10(@opentelemetry/api@1.9.0)
-      '@opentelemetry/api': 1.9.0
 
   '@emnapi/runtime@1.7.1':
     dependencies:
