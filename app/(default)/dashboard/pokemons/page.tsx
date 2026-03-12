@@ -199,7 +199,7 @@ const PokemonPageContent = () => {
                 onClick={() => handleViewDetail(pokemon)}
                 className="flex-1 gap-1.5 border border-white rounded-lg text-base h-10 hover:bg-white/10"
               >
-                View Details
+                Details
               </button>
               <button
                 onClick={() => toggleWatchlist(pokemon.id)}

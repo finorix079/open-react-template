@@ -1,5 +1,6 @@
 import { getAllMatchedApis, getTopKResults, fetchPromptFile } from '@/services/chatPlannerService';
-import { openaiChatCompletion, kimiChatCompletion } from '@/utils/aiHandler';
+import { aiGenerateObject, aiGenerateText, kimiChatCompletion } from '@/utils/aiHandler';
+import { IntentSchema, ExecutionPlanSchema, PlannerValidationSchema } from '@/schemas/ai';
 // import fs from 'fs';
 // import path from 'path';
 
@@ -82,11 +83,9 @@ Begin judgment:`;
 
       console.log('📊 Step 0: Validating goal completion...');
 
-      const validatorText = await openaiChatCompletion({
-        messages: [{ role: 'user', content: validatorPrompt }],
-        temperature: 0.0,
-        max_tokens: 256,
-      });
+      const validatorText = await aiGenerateText('gpt-4o', [
+        { role: 'user', content: validatorPrompt },
+      ]);
       console.log('✅ Goal completion validation response:', validatorText);
 
       if (validatorText === 'GOAL_COMPLETED') {
@@ -141,39 +140,23 @@ Begin planning:`;
 
         // ==================== STEP 1: LLM 分析下一步意图 ====================
         console.log('📊 Step 1: 分析下一步意图...');
-        let intentJson = await kimiChatCompletion({
+        const intentRaw = await kimiChatCompletion({
           messages: [{ role: 'user', content: nextActionPrompt }],
           temperature: 0.3,
           max_tokens: 256,
         });
-        console.log('✅ 意图分析响应:', intentJson);
-        let intentObj;
-        // 尝试修正和提取伪JSON
-        try {
-          try {
-            intentObj = JSON.parse(intentJson);
-          } catch {
-            // 才进入“修正伪 JSON”逻辑
-            // 1. 提取 {...} 块
-            const match = intentJson.match(/\{[\s\S]*\}/);
-            if (match) intentJson = match[0];
-            // 2. 替换中文逗号、全角引号等
-            intentJson = intentJson
-              .replace(/，/g, ',')
-              .replace(/[“”]/g, '"')
-              .replace(/：/g, ':')
-              .replace(/\s*([a-zA-Z0-9_]+)\s*:/g, '"$1":') // 补key引号
-              .replace(/:([\s]*)("[^"]*"|\d+|true|false|null)/g, ': $2');
-            // 3. 去除多余换行
-            intentJson = intentJson.replace(/\n/g, ' ');
-            intentObj = JSON.parse(intentJson);
-          }
-        } catch (e) {
-          console.error('Failed to parse intent JSON:', e, '\n原始intentJson:', intentJson);
+        console.log('✅ 意图分析响应:', intentRaw);
+        // Extract JSON block and validate with Zod — no manual string repair
+        const intentJsonMatch = intentRaw.match(/\{[\s\S]*\}/);
+        const intentParsed = intentJsonMatch
+          ? IntentSchema.safeParse(JSON.parse(intentJsonMatch[0]))
+          : { success: false as const };
+        if (!intentParsed.success) {
+          console.error('Failed to parse intent JSON:', intentRaw);
           throw new Error('Invalid JSON format in intent analysis response.');
         }
-        nextIntent = intentObj.description?.trim() || '';
-        intentType = intentObj.type?.trim() || '';
+        nextIntent = intentParsed.data.description.trim();
+        intentType = intentParsed.data.type;
         console.log('✅ 下一步意图:', nextIntent);
 
         // 如果目标已完成
@@ -274,25 +257,16 @@ Begin planning:`;
 
     IMPORTANT: Execute ONLY the "Next Step Intent" above using SQL queries.`;
 
-      let plannerResponse = await openaiChatCompletion({
-        messages: [
-          { role: 'system', content: plannerSystemPrompt },
-          { role: 'user', content: plannerUserMessage },
-        ],
-        temperature: 0.5,
-        max_tokens: 2048,
+      console.log('Planner System Prompt:', plannerSystemPrompt);
+      const plannerObj = await aiGenerateObject('gpt-4o', ExecutionPlanSchema, [
+        { role: 'system', content: plannerSystemPrompt },
+        { role: 'user', content: plannerUserMessage },
+      ])
+      .catch((e) => {
+        console.error('Error generating execution plan:', e);
+        throw new Error('Failed to generate execution plan');
       });
-      plannerResponse = plannerResponse.replace(/```json|```/g, '').trim();
-      plannerResponse = plannerResponse.replace(/```json|```/g, '').trim();
-
-      // 提取JSON
-      const jsonMatch = plannerResponse.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        plannerResponse = jsonMatch[0];
-      } else {
-        throw new Error('Invalid planner response format.');
-      }
-
+      let plannerResponse = JSON.stringify(plannerObj);
       console.log('✅ Original Planner Response:', plannerResponse);
 
       let retryNeeded = true;
@@ -327,19 +301,13 @@ VALIDATION APPROACH:
 Output:
 { "needs_clarification": false } if the query looks reasonable
 { "needs_clarification": true, "reason": "...", "clarification_question": "..." } ONLY for obvious errors`;
-        let validationText = await openaiChatCompletion({
-          messages: [{ role: 'user', content: validationPrompt }],
-          temperature: 0.2,
-          max_tokens: 512,
-        });
-        validationText = validationText.replace(/```json|```/g, '').trim();
-        const validationMatch = validationText.match(/\{[\s\S]*\}/);
-        if (validationMatch) validationText = validationMatch[0];
-        let validationObj;
+        let validationObj: { needs_clarification: boolean; reason?: string | null; clarification_question?: string | null };
         try {
-          validationObj = JSON.parse(validationText);
+          validationObj = await aiGenerateObject('gpt-4o', PlannerValidationSchema, [
+            { role: 'user', content: validationPrompt },
+          ]);
         } catch (e) {
-          console.error('Failed to parse validation response:', e, '\n原始validationText:', validationText);
+          console.error('Failed to generate validation response:', e);
           break;
         }
         // 如果LLM发现有schema不符，直接clarify
@@ -403,30 +371,14 @@ If intent is MODIFY, return the full remaining execution_plan (all steps, ordere
 
         console.warn(`⚠️ 需要重新生成计划 (retry ${retryCount}/${maxRetries})`);
 
-        plannerResponse = await openaiChatCompletion({
-          messages: [
-            { role: 'system', content: plannerSystemPrompt },
-            { role: 'user', content: plannerUserMessage },
-            { role: 'assistant', content: plannerResponse },
-            { role: 'user', content: correctionMessage },
-          ],
-          temperature: 0.5,
-          max_tokens: 2048,
-        });
-        plannerResponse = plannerResponse.replace(/```json|```/g, '').trim();
-        const retryJsonMatch = plannerResponse.match(/\{[\s\S]*\}/);
-        if (retryJsonMatch) {
-          plannerResponse = retryJsonMatch[0];
-        }
-
+        const retryObj = await aiGenerateObject('gpt-4o', ExecutionPlanSchema, [
+          { role: 'system', content: plannerSystemPrompt },
+          { role: 'user', content: plannerUserMessage },
+          { role: 'assistant', content: plannerResponse },
+          { role: 'user', content: correctionMessage },
+        ]);
+        plannerResponse = JSON.stringify(retryObj);
         console.log('✅ 重试后的 Planner 响应:', plannerResponse);
-
-        // 验证重试后的响应
-        try {
-          JSON.parse(plannerResponse);
-        } catch (e) {
-          console.error('Failed to parse retry response:', e);
-        }
       }
 
       // 最终返回

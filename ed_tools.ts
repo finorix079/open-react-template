@@ -17,7 +17,7 @@ export const dataService = async (input: any) => {
             recordToolCall('dataService', input, res);
         }
         catch (logError) {
-            console.error('Logging Error in Data Service:', logError);
+            // console.error('Logging Error in Data Service:', logError);
         }
         return res;
     })
@@ -28,7 +28,7 @@ export const dataService = async (input: any) => {
             recordToolCall('dataService', input, err);
         }
         catch (logError) {
-            console.error('Logging Error in Data Service:', logError);
+            // console.error('Logging Error in Data Service:', logError);
         }
         throw err;
     });
@@ -45,7 +45,7 @@ export const apiService = async (input: any) => {
             recordToolCall('apiService', input, res);
         }
         catch (logError) {
-            console.error('Logging Error in API Service:', logError);
+            // console.error('Logging Error in API Service:', logError);
         }
         return res;
     })
@@ -56,7 +56,7 @@ export const apiService = async (input: any) => {
             recordToolCall('apiService', input, err);
         }
         catch (logError) {
-            console.error('Logging Error in API Service:', logError);
+            // console.error('Logging Error in API Service:', logError);
         }
         throw err;
     });
@@ -73,7 +73,7 @@ export const queryRefinement = async (input: any) => {
             recordToolCall('queryRefinement', input, res);
         }
         catch (logError) {
-            console.error('Logging Error in API Service:', logError);
+            // console.error('Logging Error in API Service:', logError);
         }
         return res;
     })
@@ -84,7 +84,7 @@ export const queryRefinement = async (input: any) => {
             recordToolCall('queryRefinement', input, err);
         }
         catch (logError) {
-            console.error('Logging Error in API Service:', logError);
+            // console.error('Logging Error in API Service:', logError);
         }
         throw err;
     }); 
@@ -100,7 +100,7 @@ export const pokemonService = async (input: any) => {
             recordToolCall('pokemonService', input, res);
         }
         catch (logError) {
-            console.error('Logging Error in API Service:', logError);
+            // console.error('Logging Error in API Service:', logError);
         }
         return res;
     })
@@ -111,7 +111,7 @@ export const pokemonService = async (input: any) => {
             recordToolCall('pokemonService', input, err);
         }
         catch (logError) {
-            console.error('Logging Error in API Service:', logError);
+            // console.error('Logging Error in API Service:', logError);
         }
         throw err;
     });
@@ -120,29 +120,28 @@ export const pokemonService = async (input: any) => {
 // Fully covered
 export const taskSelectorService = async (input: any) => {
     const { queryEmbedding, topK, context } = input as { queryEmbedding: number[]; topK?: number; context?: unknown };
-    return await findTopKSimilarApi({ queryEmbedding, topK, context: context as (RequestContext | undefined) })
-    .then(async (res: any) => {
-        console.log('Task Selector Service Result:', res);
-        try {
-            const { recordToolCall } = await import("elasticdash-test");
-            recordToolCall('taskSelectorService', input, res);
-        }
-        catch (logError) {
-            console.error('Logging Error in API Service:', logError);
-        }
-        return res;
-    })
-    .catch(async (err: any) => {
+    // findTopKSimilarApi is synchronous — call it directly rather than chaining .then()
+    let res: any;
+    try {
+        res = findTopKSimilarApi({ queryEmbedding, topK, context: context as (RequestContext | undefined) });
+    } catch (err: any) {
         console.error('Task Selector Service Error:', err);
         try {
             const { recordToolCall } = await import("elasticdash-test");
             recordToolCall('taskSelectorService', input, err);
-        }
-        catch (logError) {
-            console.error('Logging Error in API Service:', logError);
+        } catch (logError) {
+            // console.error('Logging Error in API Service:', logError);
         }
         throw err;
-    });
+    }
+    console.log('Task Selector Service Result:', res);
+    try {
+        const { recordToolCall } = await import("elasticdash-test");
+        recordToolCall('taskSelectorService', input, res);
+    } catch (logError) {
+        // console.error('Logging Error in API Service:', logError);
+    }
+    return res;
 };
 
 // Fully covered
@@ -158,7 +157,7 @@ export const watchlistService = async (input: any) => {
             recordToolCall('watchlistService', input, res);
         }
         catch (logError) {
-            console.error('Logging Error in API Service:', logError);
+            // console.error('Logging Error in API Service:', logError);
         }
         return res;
     })
@@ -169,7 +168,7 @@ export const watchlistService = async (input: any) => {
             recordToolCall('watchlistService', input, err);
         }
         catch (logError) {
-            console.error('Logging Error in API Service:', logError);
+            // console.error('Logging Error in API Service:', logError);
         }
         throw err;
     });

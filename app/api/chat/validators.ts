@@ -2,7 +2,8 @@
  * validators.ts
  * Functions for validating intent type and goal completion status.
  */
-import { kimiChatCompletion, openaiChatCompletion } from '@/utils/aiHandler';
+import { kimiChatCompletion, aiGenerateObject } from '@/utils/aiHandler';
+import { NeedMoreActionsSchema } from '@/schemas/ai';
 
 /**
  * Classifies whether a query/plan is a resolution (read-only check) or an execution (mutation).
@@ -77,11 +78,7 @@ export async function validateNeedMoreActions(
   item_not_found?: boolean;
 }> {
   try {
-    const content = await openaiChatCompletion({
-      messages: [
-        {
-          role: 'system',
-          content: `You are the VALIDATOR.
+    const systemPrompt = `You are the VALIDATOR.
 
 Your ONLY responsibility is to determine whether
 the ORIGINAL USER GOAL has been fully satisfied.
@@ -222,37 +219,6 @@ and an API endpoint returns a full list/array:
 → DO NOT say "we need a count API"
 
 ────────────────────────────────────────
-OUTPUT FORMAT (JSON ONLY)
-────────────────────────────────────────
-
-If the goal IS satisfied:
-
-{
-  "needsMoreActions": false,
-  "reason": "Clear explanation of how the original user goal has been fully satisfied based on world state"
-}
-
-If the goal is NOT satisfied:
-
-{
-  "needsMoreActions": true,
-  "reason": "What part of the original user goal is still unmet",
-  "missing_requirements": [
-    "Explicit unmet condition 1",
-    "Explicit unmet condition 2"
-  ],
-  "suggested_next_action": "High-level description of what must happen next (NOT a full plan)"
-}
-
-If the requested item/entity DOES NOT EXIST (after search returned empty/null/404):
-
-{
-  "needsMoreActions": false,
-  "reason": "The requested item '[name]' does not exist in the system. Search returned no results.",
-  "item_not_found": true
-}
-
-────────────────────────────────────────
 FINAL OVERRIDE RULE
 ────────────────────────────────────────
 
@@ -260,11 +226,9 @@ If you are unsure whether the user goal has been met,
 you MUST respond with needsMoreActions = true.
 
 False negatives are acceptable.
-False positives are NOT.`,
-        },
-        {
-          role: 'user',
-          content: `Original Query: ${originalQuery}
+False positives are NOT.`;
+
+    const userMessage = `Original Query: ${originalQuery}
 
 Last Execution Plan: ${lastExecutionPlan ? JSON.stringify(lastExecutionPlan.execution_plan || lastExecutionPlan, null, 2) : 'No plan available'}
 
@@ -287,24 +251,21 @@ IMPORTANT:
 4. Only request more actions if there are genuinely missing IDs or the goal is incomplete
 5. DO NOT request count/aggregation endpoints if arrays are already available
 
-Can we answer the original query with the information we have? Or do we need more API calls?`,
-        },
-      ],
-      temperature: 0.3,
-      max_tokens: 4096,
-    });
+Can we answer the original query with the information we have? Or do we need more API calls?`;
 
-    console.log('Validator Response 2:', content);
-
-    const sanitized = content.replace(/```json|```/g, '').trim();
-    const jsonMatch = sanitized.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const result = JSON.parse(jsonMatch[0]);
-      console.log('Validator Decision:', result);
-      return result;
-    }
-
-    return { needsMoreActions: false, reason: 'Unable to parse validator response' };
+    const result = await aiGenerateObject('gpt-4o', NeedMoreActionsSchema, [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage },
+    ]);
+    console.log('Validator Decision:', result);
+    return {
+      needsMoreActions: result.needsMoreActions,
+      reason: result.reason,
+      missing_requirements: result.missing_requirements ?? undefined,
+      suggested_next_action: result.suggested_next_action ?? undefined,
+      useful_data: result.useful_data ?? undefined,
+      item_not_found: result.item_not_found ?? undefined,
+    };
   } catch (error) {
     console.error('Error in validator:', error);
     return { needsMoreActions: false, reason: 'Validator error, proceeding with available data' };

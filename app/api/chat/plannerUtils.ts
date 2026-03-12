@@ -5,7 +5,8 @@
  */
 import jaison from '@/utils/jaison';
 import { RequestContext } from '@/services/chatPlannerService';
-import { kimiChatCompletion, openaiChatCompletion } from '@/utils/aiHandler';
+import { kimiChatCompletion, aiGenerateText } from '@/utils/aiHandler';
+import { TableSelectionSchema } from '@/schemas/ai';
 import { SavedTask } from '@/services/taskService';
 import { sendToPlanner } from './planner';
 
@@ -235,18 +236,20 @@ IMPORTANT RULES:
 
 Output:`;
 
-    let tableSelectionText = await kimiChatCompletion({
+    const tableSelectionRaw = await kimiChatCompletion({
       messages: [{ role: 'system', content: tableSelectionPrompt }],
       temperature: 0.3,
       max_tokens: 1024,
     });
 
-    const jsonMatch = tableSelectionText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    const tableJsonMatch = tableSelectionRaw.match(/\{[\s\S]*\}/);
+    const tableSelectionParsed = tableJsonMatch
+      ? TableSelectionSchema.safeParse(JSON.parse(tableJsonMatch[0]))
+      : { success: false as const };
+    if (!tableSelectionParsed.success) {
       throw new Error('Failed to parse table selection response');
     }
-
-    const tableSelection = JSON.parse(jsonMatch[0]);
+    const tableSelection = tableSelectionParsed.data;
     console.log('📋 Table Selection Result:', tableSelection);
 
     if (!tableSelection.selected_tables || tableSelection.selected_tables.length === 0) {
@@ -294,11 +297,9 @@ Generate ONLY the SQL query (no explanations):
 
 SQL:`;
 
-    let sqlText = await openaiChatCompletion({
-      messages: [{ role: 'system', content: sqlPrompt }],
-      temperature: 0.3,
-      max_tokens: 512,
-    });
+    let sqlText = await aiGenerateText('gpt-4o', [
+      { role: 'system', content: sqlPrompt },
+    ]);
     sqlText = sqlText?.trim() || '';
 
     const sqlMatch = sqlText.match(/select[\s\S]+?;/i);
@@ -497,11 +498,10 @@ export async function resolvePlaceholders(
   }
 
   try {
-    const extractedValue = await openaiChatCompletion({
-      messages: [
-        {
-          role: 'system',
-          content: `You are a data extraction expert. Given a previous API response and the current step's requirements, extract the correct value to replace a "resolved_from_step_X" placeholder.
+    const extractedValue = await aiGenerateText('gpt-4o', [
+      {
+        role: 'system',
+        content: `You are a data extraction expert. Given a previous API response and the current step's requirements, extract the correct value to replace a "resolved_from_step_X" placeholder.
 
 RULES:
 1. Analyze the current step's API call to understand what value is needed
@@ -523,11 +523,8 @@ Previous Step (Step ${placeholderStepNum}) Response:
 ${JSON.stringify(referencedStep.response, null, 2)}
 
 What value should replace "resolved_from_step_${placeholderStepNum}"? Return ONLY the value:`,
-        },
-      ],
-      temperature: 0.2,
-      max_tokens: 100,
-    });
+      },
+    ]);
 
     console.log(`✅ LLM extracted value: "${extractedValue}"`);
 

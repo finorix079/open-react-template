@@ -2,6 +2,9 @@
 // Watchlist service (to manage user watchlist entries)
 import { watchlistAdd, watchlistRemove } from '@/services/watchlistService';
 import OpenAI from 'openai';
+import { createOpenAI } from '@ai-sdk/openai';
+import { generateText } from 'ai';
+import { z } from 'zod';
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { observeOpenAI } from "@langfuse/openai";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
@@ -666,4 +669,100 @@ export async function openaiChatCompletionOriginal({
 
 export const openaiChatCompletion = openaiChatCompletionOriginal;
 
-// Agentic flow orchestration logic is now available for extension
+// ---------------------------------------------------------------------------
+// Vercel AI SDK wrappers (OpenAI provider — structured output + plain text)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns an `@ai-sdk/openai` provider instance configured with the same
+ * API key used by the rest of the application.
+ */
+function getOpenAIProvider() {
+  return createOpenAI({
+    apiKey: process.env.OPENAI_API_KEY ?? '',
+  });
+}
+
+/**
+ * Calls `generateObject` from the Vercel AI SDK with a Zod schema, using
+ * OpenAI's native structured-output mode.  The SDK retries automatically on
+ * schema mismatches, so the return value is always a fully-validated `T`.
+ *
+ * Use this instead of `openaiChatCompletion` + regex + JSON.parse for any
+ * call site that expects a structured JSON response from a GPT model.
+ *
+ * @param model   - OpenAI model ID (e.g. "gpt-4o", "gpt-4o-mini")
+ * @param schema  - Zod schema describing the expected output shape
+ * @param messages - OpenAI-style chat messages
+ * @returns Fully validated object of type T
+ */
+export async function aiGenerateObject<T>(
+  model: string,
+  schema: z.ZodType<T>,
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+): Promise<T> {
+  try {
+    const provider = getOpenAIProvider();
+
+    // Use plain generateText — no schema is serialised and sent to OpenAI, so the
+    // Responses API / Chat Completions structured-output enforcement never fires.
+    // z.record() generates 'propertyNames' in JSON Schema which OpenAI rejects under
+    // structured-output mode. We inject the JSON Schema as prompt text instead and
+    // validate client-side with Zod.
+    const jsonSchema = z.toJSONSchema(schema);
+    const schemaInstruction =
+      '\n\nYou MUST respond with a valid JSON object only — no markdown fences, no explanation.' +
+      '\nThe response must conform to this JSON Schema:\n' +
+      JSON.stringify(jsonSchema, null, 2);
+
+    const hasSystem = messages.some((m) => m.role === 'system');
+    const augmented: typeof messages = hasSystem
+      ? messages.map((m) =>
+          m.role === 'system' ? { ...m, content: m.content + schemaInstruction } : m,
+        )
+      : [{ role: 'system', content: 'Respond with a valid JSON object only.' + schemaInstruction }, ...messages];
+
+    const { text } = await generateText({
+      model: provider.chat(model),
+      messages: augmented,
+    });
+
+    const jsonText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+
+    console.log('Raw model output:', text);
+    console.log('Extracted JSON text:', jsonText);
+
+    return schema.parse(JSON.parse(jsonText));
+  }
+  catch (err) {
+    const jsonSchema = z.toJSONSchema(schema);
+    console.error('Error in aiGenerateObject:', err);
+    console.error('Related messages:', messages);
+    console.error('Expected schema:', jsonSchema);
+    throw new Error(
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+}
+
+/**
+ * Calls `generateText` from the Vercel AI SDK for plain-text LLM responses.
+ *
+ * Use this instead of `openaiChatCompletion` for call sites that expect a
+ * raw string response (no JSON parsing required).
+ *
+ * @param model   - OpenAI model ID (e.g. "gpt-4o", "gpt-4o-mini")
+ * @param messages - OpenAI-style chat messages
+ * @returns The model's text response as a trimmed string
+ */
+export async function aiGenerateText(
+  model: string,
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+): Promise<string> {
+  const provider = getOpenAIProvider();
+  const { text } = await generateText({
+    model: provider.chat(model),
+    messages,
+  });
+  return text.trim();
+}

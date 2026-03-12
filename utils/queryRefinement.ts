@@ -1,6 +1,7 @@
 import { selectReferenceTask } from "@/services/taskSelectorService";
 import { fetchTaskList, SavedTask } from "@/services/taskService";
-import { openaiChatCompletion } from '@/utils/aiHandler';
+import { aiGenerateObject } from '@/utils/aiHandler';
+import { QueryRefinementSchema } from '@/schemas/ai';
 // import path from 'path';
 // import fs from 'fs';
 
@@ -159,48 +160,19 @@ Query: "Add Pikachu to my watchlist"
 Investigatory Entities: ["Pikachu details", "pokemon ID", "user watchlist"]
 IntentType: MODIFY
 
-Always respond in the following format:
+Respond with a JSON object matching the schema exactly — no extra fields.`;
 
-Refined Query: [refined query]
-Language: [language code]
-Concepts: [list of concepts]
-API Needs: [list of API functionalities needed]
-Entities: [list of entities that require investigation to answer the query]
-IntentType: ["FETCH"/"MODIFY"]`;
-
-  const userMessage = contextHistory 
+  const userMessage = contextHistory
     ? `HISTORICAL CONTEXT (for reference only):\n${contextHistory}\n\n========================================\nCURRENT QUERY (PRIMARY FOCUS):\n${currentQuery}`
     : currentQuery;
 
-  const content = await openaiChatCompletion({
-    messages: [
-      {
-        role: 'system',
-        content: systemPrompt,
-      },
-      {
-        role: 'user',
-        content: userMessage,
-      },
-    ],
-    temperature: 0.5,
-    max_tokens: 4096,
-  });
-  console.log('Validator Response 2:', content);
+  const result = await aiGenerateObject('gpt-4o', QueryRefinementSchema, [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userMessage },
+  ]);
+  console.log('Validator Response 2:', result);
 
-  const refinedQueryMatch = content.match(/Refined Query: (.+)\nLanguage:/);
-  const languageMatch = content.match(/Language: (.+)\nConcepts:/);
-  const conceptsMatch = content.match(/Concepts: \[(.+)\]\nAPI Needs:/);
-  const apiNeedsMatch = content.match(/API Needs: \[(.+)\]\nEntities:/);
-  const entitiesMatch = content.match(/Entities: \[(.+)\]\nIntentType:/);
-  const intentTypeMatch = content.match(/IntentType: (.+)/);
-
-  const refinedQuery = refinedQueryMatch ? refinedQueryMatch[1].trim() : userInput;
-  const language = languageMatch ? languageMatch[1].trim() : 'EN';
-  const concepts = conceptsMatch ? conceptsMatch[1].split(',').map((c: any) => c.trim()) : [];
-  const apiNeeds = apiNeedsMatch ? apiNeedsMatch[1].split(',').map((a: any) => a.trim()) : [];
-  const entities = entitiesMatch ? entitiesMatch[1].split(',').map((e: any) => e.trim().replace(/['"]/g, '')) : [userInput];
-  const intentType = intentTypeMatch ? intentTypeMatch[1].trim() as "FETCH" | "MODIFY" : "FETCH";
+  const { refinedQuery, language, concepts, apiNeeds, entities, intentType } = result;
 
   // Attempt to reuse a saved task as reference BEFORE first planner call
   // Use refined intentType as key indicator for LLM to locate best matching task

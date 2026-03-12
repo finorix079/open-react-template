@@ -29,7 +29,7 @@ const WatchlistPage = () => {
       await removeFromWatchlist(pokemonId);
       fetchWatchlist();
     } catch (error) {
-      console.error('Failed to remove from watchlist:', error);
+      console.error('Failed to Unwatch:', error);
     }
   };
 
@@ -50,7 +50,7 @@ const WatchlistPage = () => {
     return <div className="space-y-6">
       <div className="pb-6">
         <h1 className="text-4xl font-semibold text-foreground">Your Watchlist</h1>
-        <p className="mt-2 text-muted-foreground">Keep track of your favorite Pokémon. View details and manage your collection.</p>
+        <p className="mt-2 text-muted-foreground">Keep track of your favorite Pokémon. Details and manage your collection.</p>
       </div>
       <div>Your watchlist is empty.</div>
     </div>;
@@ -117,13 +117,13 @@ const WatchlistPage = () => {
                 onClick={() => handleViewDetails(pokemon.pokemonId)}
                 className="flex-1 gap-1.5 border border-white rounded-lg text-base h-10 hover:bg-white/10"
               >
-                View Details
+                Details
               </button>
               <button
                 onClick={() => handleRemove(pokemon.pokemonId)}
                 className="flex-1 gap-1.5 text-base h-10 border border-red-500 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20"
               >
-                Remove from Watchlist
+                Unwatch
               </button>
             </div>
           </div>

@@ -215,7 +215,8 @@ export async function executeIterativePlanner(
   entities: any[] = [],
   requestContext: RequestContext,
   maxIterations: number = 50,
-  referenceTask?: SavedTask | null
+  referenceTask?: SavedTask | null,
+  onStepStart?: (info: { stepNumber: number; description: string; method: string; path: string; sql?: string }) => void,
 ): Promise<any> {
   let currentPlanResponse = initialPlanResponse;
   let accumulatedResults: any[] = [];
@@ -559,6 +560,15 @@ export async function executeIterativePlanner(
 
             let apiResponse;
             try {
+              onStepStart?.({
+                stepNumber: stepToExecute.step_number || executedSteps.length + 1,
+                description: stepToExecute.description ?? '',
+                method: (stepToExecute.api.method ?? '').toUpperCase(),
+                path: stepToExecute.api.path ?? '',
+                sql: typeof (requestBodyToUse as any)?.query === 'string'
+                  ? (requestBodyToUse as any).query as string
+                  : undefined,
+              });
               apiResponse = await apiService({
                 baseUrl: process.env.NEXT_PUBLIC_ELASTICDASH_API || '',
                 schema: apiSchema,

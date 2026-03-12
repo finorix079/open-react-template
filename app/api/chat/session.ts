@@ -1,12 +1,14 @@
 /**
  * session.ts
  * Manages in-memory pending plan storage and session ID generation for the chat approval workflow.
+ * Plans are written through to the local JSON file DB (services/conversationDb.ts) so that the
+ * approval-polling loop in the SSE stream can detect decisions made via POST /api/approve.
  */
 import { Message } from '@/services/chatPlannerService';
 import { SavedTask } from '@/services/taskService';
+import { upsertSession, pruneOldSessions } from '@/services/conversationDb';
 
-/** In-memory store for plans awaiting user approval. Key: sessionId */
-export const pendingPlans = new Map<string, {
+export interface PendingPlanEntry {
   plan: any;
   planResponse: string;
   refinedQuery: string;
@@ -17,17 +19,56 @@ export const pendingPlans = new Map<string, {
   intentType: 'FETCH' | 'MODIFY';
   timestamp: number;
   referenceTask?: SavedTask;
-}>();
+}
 
-// Clean up old pending plans (older than 1 hour)
+/** In-memory cache of plans awaiting user approval. Key: sessionId */
+export const pendingPlans = new Map<string, PendingPlanEntry>();
+
+/**
+ * Stores a pending plan both in the in-memory cache and the local JSON file DB.
+ * The file DB is what the SSE polling loop reads to detect approval.
+ *
+ * @param sessionId - Stable session identifier for this conversation.
+ * @param entry     - All data required to execute the plan once approved.
+ * @param messages  - Current conversation messages (stored for context).
+ */
+export function storePendingPlan(
+  sessionId: string,
+  entry: PendingPlanEntry,
+  messages: Message[],
+): void {
+  pendingPlans.set(sessionId, entry);
+
+  upsertSession({
+    sessionId,
+    status: 'pending_approval',
+    messages: messages as { role: 'user' | 'assistant'; content: string }[],
+    pendingPlanData: {
+      plan: entry.plan,
+      planResponse: entry.planResponse,
+      refinedQuery: entry.refinedQuery,
+      topKResults: entry.topKResults,
+      conversationContext: entry.conversationContext,
+      finalDeliverable: entry.finalDeliverable,
+      entities: entry.entities,
+      intentType: entry.intentType,
+      referenceTask: entry.referenceTask,
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+// Prune expired sessions from the JSON file DB every 5 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [sessionId, data] of pendingPlans.entries()) {
-    if (now - data.timestamp > 3600000) {
+    if (now - data.timestamp > 3_600_000) {
       pendingPlans.delete(sessionId);
     }
   }
-}, 300000); // Run every 5 minutes
+  pruneOldSessions();
+}, 300_000);
 
 /**
  * Generates a stable session ID from conversation messages.
