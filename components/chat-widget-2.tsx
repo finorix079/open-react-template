@@ -61,8 +61,12 @@ export default function ChatWidget2() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [isSavingTask, setIsSavingTask] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Tracks whether we're currently waiting for plan approval.
+  // A ref (not state) so the stream-reading closure always sees the current value.
+  const isAwaitingApprovalRef = useRef(false);
 
   // // Load chat history from localStorage on mount
   // useEffect(() => {
@@ -293,6 +297,148 @@ export default function ChatWidget2() {
     scrollToBottom();
   }, [messages]);
 
+  /**
+   * Reads a streaming response in the Vercel AI SDK data-stream wire protocol
+   * and dispatches each frame to update component state.
+   *
+   * Wire format (each line: `<prefix>:<json>\n`):
+   *   f: — message start (ignored)
+   *   0: — text delta  (string)
+   *   2: — data array  [{type:'status'|'plan'|'result'|'tool_call', ...}]
+   *   3: — error       (string)
+   *   e: — finish step (ignored)
+   *   d: — done / close stream
+   */
+  const consumeAIDataStream = async (response: Response) => {
+    if (!response.ok || !response.body) {
+      throw new Error(`Stream request failed: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let hasStreamingPlaceholder = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        const colonIdx = trimmed.indexOf(':');
+        if (colonIdx === -1) continue;
+
+        const prefix = trimmed.slice(0, colonIdx);
+        const jsonStr = trimmed.slice(colonIdx + 1);
+
+        let parsed: unknown;
+        try { parsed = JSON.parse(jsonStr); } catch { continue; }
+
+        switch (prefix) {
+          case '0': {
+            // Text delta — append to the last streaming assistant message
+            const token = typeof parsed === 'string' ? parsed : '';
+            if (!hasStreamingPlaceholder) {
+              hasStreamingPlaceholder = true;
+              setIsLoading(false);
+              setStreamingStatus(null);
+              setMessages((prev) => [...prev, { role: 'assistant', content: token }]);
+            } else {
+              setMessages((prev) => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                if (last?.role === 'assistant') {
+                  updated[updated.length - 1] = { ...last, content: last.content + token };
+                }
+                return updated;
+              });
+            }
+            break;
+          }
+
+          case '2': {
+            // Data event — array of typed payloads
+            const items = Array.isArray(parsed) ? parsed : [];
+            for (const item of items as Array<Record<string, unknown>>) {
+              const type = item.type as string;
+
+              if (type === 'status') {
+                setStreamingStatus((item.message as string) ?? '');
+                // Don't re-enable loading spinner while waiting for user approval —
+                // that would disable the Approve/Reject buttons.
+                if (!isAwaitingApprovalRef.current) {
+                  setIsLoading(true);
+                }
+              } else if (type === 'plan') {
+                isAwaitingApprovalRef.current = true;
+                setIsLoading(false);
+                setStreamingStatus(null);
+                setMessages((prev) =>
+                  cleanMessagesCodeBlocks([
+                    ...prev,
+                    {
+                      role: 'assistant',
+                      content: (item.message as string) ?? 'Here is my plan:',
+                      awaitingApproval: item.awaitingApproval as boolean,
+                      sessionId: item.sessionId as string,
+                      planResponse: item.planResponse as string,
+                      refinedQuery: item.refinedQuery as string,
+                    },
+                  ]),
+                );
+              } else if (type === 'result') {
+                setIsLoading(false);
+                setStreamingStatus(null);
+                setMessages((prev) =>
+                  cleanMessagesCodeBlocks([
+                    ...prev,
+                    {
+                      role: 'assistant',
+                      content:
+                        (item.message as string) ??
+                        'I apologize, but I was unable to process your request.',
+                      awaitingApproval: item.awaitingApproval as boolean | undefined,
+                      sessionId: item.sessionId as string | undefined,
+                      planResponse: item.planResponse as string | undefined,
+                      refinedQuery: item.refinedQuery as string | undefined,
+                    },
+                  ]),
+                );
+              }
+            }
+            break;
+          }
+
+          case '3': {
+            // Error
+            setIsLoading(false);
+            setStreamingStatus(null);
+            const errMsg = typeof parsed === 'string' ? parsed : 'An error occurred.';
+            setMessages((prev) =>
+              cleanMessagesCodeBlocks([...prev, { role: 'assistant', content: errMsg }]),
+            );
+            break;
+          }
+
+          case 'd': {
+            // Done — apply final cleanup
+            setMessages((prev) => cleanMessagesCodeBlocks(prev));
+            break;
+          }
+
+          default:
+            break;
+        }
+      }
+    }
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -301,6 +447,7 @@ export default function ChatWidget2() {
     setMessages(updatedMessages);
     setInput('');
     setIsLoading(true);
+    setStreamingStatus(null);
 
     try {
       const trivialResponses: { [key: string]: string } = {
@@ -317,47 +464,31 @@ export default function ChatWidget2() {
         return;
       }
 
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/chat-stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': localStorage.getItem('token') ? `Bearer ${localStorage.getItem('token')}` : '',
+          Authorization: localStorage.getItem('token')
+            ? `Bearer ${localStorage.getItem('token')}`
+            : '',
         },
-        body: JSON.stringify({
-          messages: updatedMessages,
-        }),
+        body: JSON.stringify({ messages: updatedMessages }),
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.warn('API Error:', errorText);
-        throw new Error('Failed to process the request');
-      }
-
-      const data = await response.json();
-      console.log('(Chat) API Response:', data);
-
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: data.message || 'I apologize, but I was unable to process your request.',
-        awaitingApproval: data.awaitingApproval,
-        sessionId: data.sessionId,
-        planSummary: data.planSummary,
-        planResponse: data.planResponse,
-        refinedQuery: data.refinedQuery,
-        planningDurationMs: data.planningDurationMs,
-        usedReferencePlan: data.usedReferencePlan,
-      };
-      setMessages((prev) => cleanMessagesCodeBlocks([...prev, assistantMessage]));
-    } catch (error: any) {
-      const errorMessage: Message = {
-        role: 'assistant',
-        content: 'An error occurred while processing your request. Please try again.',
-      };
-      setMessages((prev) => cleanMessagesCodeBlocks([...prev, errorMessage]));
+      // consumeAIDataStream reads until the server closes the stream,
+      // which may be after the user approves a plan via /api/approve.
+      await consumeAIDataStream(response);
+    } catch (error: unknown) {
+      setMessages((prev) =>
+        cleanMessagesCodeBlocks([
+          ...prev,
+          { role: 'assistant', content: 'An error occurred while processing your request. Please try again.' },
+        ]),
+      );
       console.warn('Error in sendMessage:', error);
     } finally {
       setIsLoading(false);
+      setStreamingStatus(null);
     }
   };
 
@@ -389,106 +520,48 @@ export default function ChatWidget2() {
     }
   };
 
+  /**
+   * Signals the user's approval or rejection to POST /api/approve.
+   * The original SSE stream from sendMessage is still open and polling
+   * for this signal — it will receive the execution updates automatically.
+   */
   const handleApproval = async (approved: boolean, sessionId?: string) => {
+    if (!sessionId) return;
+
+    isAwaitingApprovalRef.current = false;
+    // Show loading while the approval is being processed; the original
+    // consumeAIDataStream call will re-manage loading state once execution begins.
     setIsLoading(true);
+    setStreamingStatus(null);
 
-    if (approved) {
-      const userMessage: Message = { role: 'user', content: 'approve' };
-      const updatedMessages = cleanMessagesCodeBlocks([...messages, userMessage]);
-      setMessages(updatedMessages);
+    const label = approved ? 'approve' : 'reject';
+    setMessages((prev) =>
+      cleanMessagesCodeBlocks([...prev, { role: 'user', content: label }]),
+    );
 
-      try {
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': localStorage.getItem('token') ? `Bearer ${localStorage.getItem('token')}` : '',
-          },
-          body: JSON.stringify({
-            messages: updatedMessages,
-            sessionId: sessionId,
-            isApproval: true,
-          }),
-        });
+    try {
+      const response = await fetch('/api/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, approved }),
+      });
 
-        if (!response.ok) {
-          throw new Error('Failed to process the request');
-        }
-
-        const data = await response.json();
-        console.log('(Chat) Approval Response:', data);
-
-        const assistantMessage: Message = {
-          role: 'assistant',
-          content: data.message || 'I apologize, but I was unable to process your request.',
-          awaitingApproval: data.awaitingApproval,
-          sessionId: data.sessionId,
-          planSummary: data.planSummary,
-          planResponse: data.planResponse,
-          refinedQuery: data.refinedQuery,
-          planningDurationMs: data.planningDurationMs,
-          usedReferencePlan: data.usedReferencePlan,
-        };
-        setMessages((prev) => cleanMessagesCodeBlocks([...prev, assistantMessage]));
-      } catch (error: any) {
-        const errorMessage: Message = {
-          role: 'assistant',
-          content: 'An error occurred while processing your request. Please try again.',
-        };
-        setMessages((prev) => cleanMessagesCodeBlocks([...prev, errorMessage]));
-        console.warn('Error in handleApproval:', error);
-      } finally {
-        setIsLoading(false);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error((err as { error?: string }).error ?? 'Failed to submit decision');
       }
-    } else {
-      const userMessage: Message = { role: 'user', content: 'reject' };
-      const updatedMessages = cleanMessagesCodeBlocks([...messages, userMessage]);
-      setMessages(updatedMessages);
-
-      try {
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': localStorage.getItem('token') ? `Bearer ${localStorage.getItem('token')}` : '',
-          },
-          body: JSON.stringify({
-            messages: updatedMessages,
-            sessionId: sessionId,
-            isApproval: false,
-          }),
-        });
-
-        if (!response.ok) {
-
-          throw new Error('Failed to process the request');
-        }
-
-        const data = await response.json();
-        console.log('(Chat) Rejection Response:', data);
-
-        const assistantMessage: Message = {
-          role: 'assistant',
-          content: data.message || 'Plan rejected. Please tell me what you would like to change.',
-          awaitingApproval: data.awaitingApproval,
-          sessionId: data.sessionId,
-          planSummary: data.planSummary,
-          planResponse: data.planResponse,
-          refinedQuery: data.refinedQuery,
-          planningDurationMs: data.planningDurationMs,
-          usedReferencePlan: data.usedReferencePlan,
-        };
-        setMessages((prev) => cleanMessagesCodeBlocks([...prev, assistantMessage]));
-      } catch (error: any) {
-        const errorMessage: Message = {
-          role: 'assistant',
-          content: 'An error occurred while processing your request. Please try again.',
-        };
-        setMessages((prev) => cleanMessagesCodeBlocks([...prev, errorMessage]));
-        console.warn('Error in handleRejection:', error);
-      } finally {
-        setIsLoading(false);
-      }
+      // Success — the original stream will now emit execution events.
+      // Do NOT set isLoading=false here; consumeAIDataStream owns loading state from here.
+    } catch (error: unknown) {
+      setMessages((prev) =>
+        cleanMessagesCodeBlocks([
+          ...prev,
+          { role: 'assistant', content: 'An error occurred while processing your decision. Please try again.' },
+        ]),
+      );
+      setIsLoading(false);
+      setStreamingStatus(null);
+      console.warn('Error in handleApproval:', error);
     }
   };
 
@@ -582,15 +655,19 @@ export default function ChatWidget2() {
               </div>
             ))}
 
-            {/* Loading animation */}
+            {/* Loading animation / status */}
             {isLoading && (
               <div className="message assistant">
                 <div className="message-content-wrapper">
+                  {streamingStatus ? (
+                    <div className="text-sm italic text-gray-400">{streamingStatus}</div>
+                  ) : (
                   <div className="flex space-x-2">
                     <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: '0ms' }}></div>
                     <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: '150ms' }}></div>
                     <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: '300ms' }}></div>
                   </div>
+                  )}
                 </div>
               </div>
             )}

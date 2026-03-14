@@ -120,8 +120,8 @@ export const pokemonService = async (input: any) => {
 // Fully covered
 export const taskSelectorService = async (input: any) => {
     const { queryEmbedding, topK, context } = input as { queryEmbedding: number[]; topK?: number; context?: unknown };
-    return await findTopKSimilarApi({ queryEmbedding, topK, context: context as (RequestContext | undefined) })
-    .then(async (res: any) => {
+    try {
+        const res = findTopKSimilarApi({ queryEmbedding, topK, context: context as (RequestContext | undefined) });
         console.log('Task Selector Service Result:', res);
         try {
             const { recordToolCall } = await import("elasticdash-test");
@@ -131,8 +131,7 @@ export const taskSelectorService = async (input: any) => {
             console.error('Logging Error in API Service:', logError);
         }
         return res;
-    })
-    .catch(async (err: any) => {
+    } catch (err: any) {
         console.error('Task Selector Service Error:', err);
         try {
             const { recordToolCall } = await import("elasticdash-test");
@@ -142,7 +141,7 @@ export const taskSelectorService = async (input: any) => {
             console.error('Logging Error in API Service:', logError);
         }
         throw err;
-    });
+    }
 };
 
 // Fully covered

@@ -215,7 +215,8 @@ export async function executeIterativePlanner(
   entities: any[] = [],
   requestContext: RequestContext,
   maxIterations: number = 50,
-  referenceTask?: SavedTask | null
+  referenceTask?: SavedTask | null,
+  onToolCall?: (info: unknown) => void
 ): Promise<any> {
   let currentPlanResponse = initialPlanResponse;
   let accumulatedResults: any[] = [];
@@ -736,6 +737,13 @@ export async function executeIterativePlanner(
               description: stepToExecute.description || 'API call',
               response: sanitizedProcessedResponse,
               executionIndex: stepToExecute._executionIndex,
+            });
+
+            onToolCall?.({
+              stepNumber: stepToExecute.step_number || executedSteps.length,
+              description: stepToExecute.description || 'API call',
+              path: stepToExecute.api?.path,
+              method: stepToExecute.api?.method,
             });
 
             console.log(
