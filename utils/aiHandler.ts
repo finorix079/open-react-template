@@ -9,7 +9,7 @@ import { LangfuseObservation, LangfuseSpan, LangfuseTool } from "@langfuse/traci
 import { startActiveObservation } from "@langfuse/tracing";
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { RequestContext } from '@/services/chatPlannerService';
-import { apiService, dataService, pokemonService, queryRefinement, taskSelectorService, watchlistService } from '@/ed_tools';
+import { apiService, checkApprovalStatus, dataService, pokemonService, queryRefinement, taskSelectorService, watchlistService } from '@/ed_tools';
 
 async function executeWithObservation(
   parentObs: LangfuseObservation,
@@ -103,6 +103,15 @@ export const agentTools: Record<string, AgentTool> = {
 			});
 		},
 		description: "Manage user Pokémon watchlist",
+	},
+	checkApprovalStatus: {
+		name: "checkApprovalStatus",
+		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
+			return executeWithObservation(parentObs, "checkApprovalStatus", input, async () => {
+				return await checkApprovalStatus(input);
+			});
+		},
+		description: "Check whether a pending plan has been approved or rejected by the user",
 	},
 };
 

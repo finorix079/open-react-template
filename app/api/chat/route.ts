@@ -112,6 +112,8 @@ export async function chatHandler(
     userToken: string
   }): Promise<any> {
 
+  console.log('chatHandler invoked with requestBody:', requestBody);
+
   let output: any = null;
   let usefulData = new Map();
   let finalDeliverable = '';

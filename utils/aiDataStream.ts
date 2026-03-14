@@ -15,9 +15,16 @@
 
 const encoder = new TextEncoder();
 
-/** Encodes and enqueues a single wire-protocol frame. */
+/** Encodes and enqueues a single wire-protocol frame. No-op if the controller is already closed. */
 function write(controller: ReadableStreamDefaultController, frame: string): void {
-  controller.enqueue(encoder.encode(frame));
+  try {
+    controller.enqueue(encoder.encode(frame));
+  } catch (err: unknown) {
+    // Swallow "Controller is already closed" — this is expected when a write
+    // races with a prior close (e.g. after finish() completes the stream).
+    if (err instanceof Error && err.message.includes('Invalid state')) return;
+    throw err;
+  }
 }
 
 /** f:{messageId}\n — signals the start of a new message. */
@@ -117,7 +124,12 @@ export function writeFinishMessage(
       usage: { completionTokens: data.completionTokens },
     })}\n`
   );
-  controller.close();
+  try {
+    controller.close();
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes('Invalid state')) return;
+    throw err;
+  }
 }
 
 /** 2:[{type:"tool_call", ...info}]\n — emits a tool-call progress event. */

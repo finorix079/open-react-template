@@ -385,7 +385,7 @@ export function sanitizePlannerResponse(response: string): string {
     if (!firstMatch) {
       throw new Error('No JSON object or array found in the response.');
     }
-    console.log('firstMatch:', firstMatch[0]);
+    // console.log('firstMatch:', firstMatch[0]);
     const cleaned = firstMatch[0];
 
     // const jsonFixed = jsonrepair(cleaned);

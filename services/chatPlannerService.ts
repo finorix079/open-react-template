@@ -92,7 +92,7 @@ export async function getAllMatchedApis({
 
     const embeddingData = await embeddingResponse.json();
     const isObject = typeof embeddingData === 'object' && embeddingData !== null;
-    console.log('embeddingResponse: ', embeddingResponse);
+    console.log('embeddingResponse: ', embeddingResponse.status);
 
     if (!isObject || !Array.isArray(embeddingData.data) || !embeddingData.data[0] || !embeddingData.data[0].embedding) {
       const logVal = isObject ? JSON.stringify(embeddingData) : String(embeddingData);
@@ -317,30 +317,6 @@ export function extractJSON(content: string): { json: string; text: string } | n
 
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
-}
-
-export function sanitizePlannerResponse(response: string): string {
-  try {
-    console.log('response to sanitize:', response);
-    const firstMatch = response.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-    if (!firstMatch) {
-      throw new Error('No JSON object or array found in the response.');
-    }
-    console.log('firstMatch:', firstMatch[0]);
-    let cleaned = firstMatch[0];
-
-    // const jsonFixed = jsonrepair(cleaned);
-    const jsonFixed = jaison(cleaned);
-    console.log('jsonFixed:', jsonFixed);
-    if (jsonFixed) {
-      return JSON.stringify(jsonFixed);
-    }
-
-    throw new Error('No valid JSON found in the response.');
-  } catch (error) {
-    console.error('Error sanitizing planner response:', error);
-    throw error;
-  }
 }
 
 export function containsPlaceholderReference(obj: any): boolean {
