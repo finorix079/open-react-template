@@ -1,8 +1,10 @@
 import { cosineSimilarity } from '@/src/utils/cosineSimilarity';
+import { openaiChatCompletion } from '@/utils/aiHandler';
 import fs from 'fs';
 import path from 'path';
 
-const jaison = require('jaison');
+import jaison from '@/utils/jaison';
+import { taskSelectorService } from '@/ed_tools';
 
 // Request-scoped context to prevent race conditions between concurrent requests
 export interface RequestContext {
@@ -16,37 +18,28 @@ export interface Message {
   content: string;
 }
 
-// Load vectorized data
-const vectorizedDataPath = path.join(process.cwd(), 'src/doc/vectorized-data/vectorized-data.json');
-const vectorizedDataTablePath = path.join(process.cwd(), 'src/doc/vectorized-data/table/vectorized-data.json');
-const vectorizedDataApiPath = path.join(process.cwd(), 'src/doc/vectorized-data/api/vectorized-data.json');
-const vectorizedData = JSON.parse(fs.readFileSync(vectorizedDataPath, 'utf-8'));
-const vectorizedDataTable = JSON.parse(fs.readFileSync(vectorizedDataTablePath, 'utf-8'));
-const vectorizedDataApi = JSON.parse(fs.readFileSync(vectorizedDataApiPath, 'utf-8'));
+// Lazy-loaded vectorized data — paths resolved at call time, not at module load,
+// so Turbopack does not execute fs.readFileSync during static analysis.
+let _vectorizedData: any = null;
+let _vectorizedDataTable: any = null;
+let _vectorizedDataApi: any = null;
 
-// Function to find the top-k most similar API vectors
-function findTopKSimilarApi(queryEmbedding: number[], topK: number = 3, context?: RequestContext) {
-  return vectorizedDataApi
-    .map((item: any) => {
-      let tags: string[] = item.tags || [];
-      let summary = (item.summary || '').toLowerCase();
-      let similarity = cosineSimilarity(queryEmbedding, item.embedding);
-      const entityText = (context?.ragEntity || '').toLowerCase();
-      const tagHit = tags.some(t => entityText.includes(t.toLowerCase()) || t.toLowerCase().includes(entityText));
-      const summaryHit = summary && (entityText.includes(summary) || summary.includes(entityText));
-      if (tagHit) similarity += 0.15;
-      if (summaryHit) similarity += 0.10;
-      return {
-        ...item,
-        similarity,
-      };
-    })
-    .sort((a: any, b: any) => b.similarity - a.similarity)
-    .slice(0, topK);
+/** Returns cached vectorized data, loading from disk on the first call. */
+function getVectorizedData() {
+  if (!_vectorizedData) {
+    const vectorizedDataPath = path.join(process.cwd(), 'src/doc/vectorized-data/vectorized-data.json');
+    const vectorizedDataTablePath = path.join(process.cwd(), 'src/doc/vectorized-data/table/vectorized-data.json');
+    const vectorizedDataApiPath = path.join(process.cwd(), 'src/doc/vectorized-data/api/vectorized-data.json');
+    _vectorizedData = JSON.parse(fs.readFileSync(vectorizedDataPath, 'utf-8'));
+    _vectorizedDataTable = JSON.parse(fs.readFileSync(vectorizedDataTablePath, 'utf-8'));
+    _vectorizedDataApi = JSON.parse(fs.readFileSync(vectorizedDataApiPath, 'utf-8'));
+  }
+  return { vectorizedData: _vectorizedData, vectorizedDataTable: _vectorizedDataTable, vectorizedDataApi: _vectorizedDataApi };
 }
 
 // Function to find the top-k most similar table vectors
 function findTopKSimilarTable(queryEmbedding: number[], topK: number = 3, context?: RequestContext) {
+  const { vectorizedDataTable } = getVectorizedData();
   return vectorizedDataTable
     .map((item: any) => {
       let tags: string[] = item.tags || [];
@@ -70,12 +63,10 @@ function findTopKSimilarTable(queryEmbedding: number[], topK: number = 3, contex
 export async function getAllMatchedApis({
   entities,
   intentType,
-  apiKey,
   context,
 }: {
   entities: string[];
   intentType: 'FETCH' | 'MODIFY';
-  apiKey: string;
   context?: RequestContext;
 }): Promise<Map<string, any>> {
   const allMatchedApis = new Map();
@@ -87,7 +78,7 @@ export async function getAllMatchedApis({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${process.env.NEXT_PUBLIC_OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model: 'text-embedding-ada-002',
@@ -98,7 +89,24 @@ export async function getAllMatchedApis({
       console.warn(`Failed to generate embedding for entity "${entity}"`);
       continue;
     }
+
     const embeddingData = await embeddingResponse.json();
+    const isObject = typeof embeddingData === 'object' && embeddingData !== null;
+    console.log('embeddingResponse: ', embeddingResponse.status);
+
+    if (!isObject || !Array.isArray(embeddingData.data) || !embeddingData.data[0] || !embeddingData.data[0].embedding) {
+      const logVal = isObject ? JSON.stringify(embeddingData) : String(embeddingData);
+      console.warn(`Embedding API response for entity "${entity}" is missing data or malformed:`, logVal);
+      fs.appendFileSync(
+        path.join(process.cwd(), 'embedding-error-log.txt'),
+        `\n[${new Date().toISOString()}] Entity: "${entity}" - Response: ${logVal}\n`
+      );
+      continue;
+    }
+    else {
+      console.log(`Embedding generated for entity "${entity}", proceeding with similarity search`);
+      console.log(`Embedding vector (first 5 values):`, embeddingData.data[0].embedding.slice(0, 5));
+    }
     const entityEmbedding = embeddingData.data[0].embedding;
 
     const tableResults = findTopKSimilarTable(entityEmbedding, 10, context);
@@ -111,7 +119,11 @@ export async function getAllMatchedApis({
     });
 
     if (intentType === 'MODIFY') {
-      const apiResults = findTopKSimilarApi(entityEmbedding, 10, context);
+      const apiResults = await taskSelectorService({
+        queryEmbedding: entityEmbedding, 
+        topK: 10, 
+        context
+      });
       console.log(`Found ${apiResults.length} APIs for entity "${entity}"`);
       apiResults.forEach((result: any) => {
         const existing = allMatchedApis.get(result.id);
@@ -307,29 +319,6 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-export function sanitizePlannerResponse(response: string): string {
-  try {
-    console.log('response to sanitize:', response);
-    const firstMatch = response.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-    if (!firstMatch) {
-      throw new Error('No JSON object or array found in the response.');
-    }
-    console.log('firstMatch:', firstMatch[0]);
-    let cleaned = firstMatch[0];
-
-    const jsonFixed = jaison(cleaned);
-    console.log('jsonFixed:', jsonFixed);
-    if (jsonFixed) {
-      return JSON.stringify(jsonFixed);
-    }
-
-    throw new Error('No valid JSON found in the response.');
-  } catch (error) {
-    console.error('Error sanitizing planner response:', error);
-    throw error;
-  }
-}
-
 export function containsPlaceholderReference(obj: any): boolean {
   const placeholderPattern = /resolved_from_step_\d+/i;
 
@@ -418,24 +407,12 @@ export async function resolvePlaceholders(
   console.log(`\n📋 RESOLVING PLACEHOLDER: resolved_from_step_${placeholderStepNum}`);
   console.log(`   Referenced step response:`, JSON.stringify(referencedStep.response, null, 2));
 
-  const apiKey_local = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey_local) {
-    return { resolved: false, reason: 'OpenAI API key not configured' };
-  }
-
   try {
-    const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey_local}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a data extraction expert. Given a previous API response and the current step's requirements, extract the correct value to replace a "resolved_from_step_X" placeholder.
+    const extractedValue = await openaiChatCompletion({
+      messages: [
+        {
+          role: 'system',
+          content: `You are a data extraction expert. Given a previous API response and the current step's requirements, extract the correct value to replace a "resolved_from_step_X" placeholder.
 
 RULES:
 1. Analyze the current step's API call to understand what value is needed
@@ -457,24 +434,12 @@ Previous Step (Step ${placeholderStepNum}) Response:
 ${JSON.stringify(referencedStep.response, null, 2)}
 
 What value should replace "resolved_from_step_${placeholderStepNum}"? Return ONLY the value:`,
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 100,
-      }),
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 100,
     });
-
-    if (!llmResponse.ok) {
-      const errorText = await llmResponse.text();
-      console.error('LLM extraction failed:', errorText);
-      return { resolved: false, reason: `LLM extraction failed: ${errorText}` };
-    }
-
-    const data = await llmResponse.json();
-    const extractedValue = data.choices[0]?.message?.content?.trim();
-
     console.log(`✅ LLM extracted value: "${extractedValue}"`);
-
     if (!extractedValue || extractedValue.startsWith('ERROR:')) {
       return { resolved: false, reason: `Failed to extract value: ${extractedValue}` };
     }

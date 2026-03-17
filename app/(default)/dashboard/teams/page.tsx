@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { searchPokemon } from '@/services/pokemonService';
 import { getTeams, createTeam, deleteTeam, addPokemonToTeam } from '@/services/teamService';
+import { searchPokemon } from '@/services/pokemonService';
 
 const TeamsPage = () => {
   const [teams, setTeams] = useState<any[]>([]);

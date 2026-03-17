@@ -54,8 +54,8 @@ Each checklist item MUST:
 * Define expected concrete output
 * Be verifiable by inspecting the output
 
-❌ Invalid: “Improve API schema”
-✅ Valid: “Output full response schema JSON for POST /pokemon/search with field-level descriptions”
+❌ Invalid: "Improve API schema"
+✅ Valid: "Output full response schema JSON for POST /pokemon/search with field-level descriptions"
 
 ---
 
@@ -75,7 +75,7 @@ If a step cannot be completed:
 You MUST NOT:
 
 * Claim progress without output
-* Say “working on it”, “in progress”, “please wait”
+* Say "working on it", "in progress", "please wait"
 * Defer execution to a later message
 * Mark a step complete without visible results
 
@@ -83,7 +83,7 @@ You MUST NOT:
 
 ## RESUME RULE
 
-On “resume” / “continue”:
+On "resume" / "continue":
 
 * Read `.temp/plan.md`
 * Report:
@@ -103,6 +103,85 @@ On “resume” / “continue”:
 * TypeScript only, fully type-safe
 * Import shared functions as:
   `import { fn } from "@/services/file"`
+
+---
+
+## CODING STANDARDS (ENFORCED)
+
+### Language & Type Safety
+
+* **Language:** TypeScript only
+* Use strict type safety and explicit types
+* Use `unknown` instead of `any` where input is not validated
+* Assert types explicitly with guards
+* Avoid untyped `any` usage
+
+### Naming Conventions
+
+* Types and interfaces: **PascalCase**
+* Functions and variables: **camelCase**
+* Constants: **UPPER_CASE_WITH_UNDERSCORES**
+* Tests: describe structure matching file under test
+
+### Code Style
+
+* Prefer **functional, declarative coding** patterns where applicable
+* Favor composable utilities over large monolithic functions
+
+### Architecture (MANDATORY)
+
+* Enforce separation of concerns:
+  * API layer
+  * Business logic / domain
+  * Infrastructure / service integration
+
+### Documentation (REQUIRED)
+
+* All functions MUST have JSDoc comments describing intent and side effects
+* Generated code must have clear comments explaining logic
+* All generated files MUST include header comments describing generation source and purpose
+* New modules require an entry in project documentation (`README.md` or docs folder)
+
+### Error Handling (STRICT)
+
+* All API functions MUST return structured error responses
+* No untyped error objects
+* Produce explicit failure reason when blocked
+
+### File Organization
+
+* All new API routes go under `./services/`
+* Use `next/navigation` utilities in Next.js components
+* Shared utilities must be imported as:
+  ```
+  import { fn } from "@/services/file"
+  ```
+
+### Testing (MANDATORY)
+
+* Unit tests are REQUIRED for all new functions
+* Use the project's testing framework (e.g., Vitest, Jest)
+* Tests MUST assert:
+  * Happy path
+  * Error paths
+  * Edge cases
+* Include test output or errors in your response when relevant
+
+---
+
+## OUTPUT REQUIREMENTS
+
+### For Every Task Step:
+
+* Provide full file content when creating or updating a file
+* Include code blocks with language annotation (e.g., ```ts)
+* Include test output or errors when tests are relevant
+
+### For Failure States:
+
+* Produce explicit failure reason
+* State exactly what input is missing
+* Do NOT defer or claim partial progress
 
 ---
 

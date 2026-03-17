@@ -1,21 +1,41 @@
 import { cosineSimilarity } from "@/src/utils/cosineSimilarity";
 import { SavedTask } from "./taskService";
+import { openaiChatCompletion } from '@/utils/aiHandler';
 import fs from 'fs';
 import path from 'path';
 import { RequestContext } from "./chatPlannerService";
+import { taskSelectorService } from "@/ed_tools";
 
 export interface ReferenceTaskMatch {
   task?: SavedTask;
   score?: number;
 }
 
-const vectorizedDataTablePath = path.join(process.cwd(), 'src/doc/vectorized-data/table/vectorized-data.json');
-const vectorizedDataApiPath = path.join(process.cwd(), 'src/doc/vectorized-data/api/vectorized-data.json');
-const vectorizedDataTable = JSON.parse(fs.readFileSync(vectorizedDataTablePath, 'utf-8'));
-const vectorizedDataApi = JSON.parse(fs.readFileSync(vectorizedDataApiPath, 'utf-8'));
+// Lazy-loaded vectorized data — loaded on first call to avoid module-level fs
+// reads that would cause Turbopack to fail when analyzing server-only modules.
+let _vectorizedDataTable: any = null;
+let _vectorizedDataApi: any = null;
+
+/** Returns cached vectorized data, loading from disk on the first call. */
+function getVectorizedData() {
+  if (!_vectorizedDataTable) {
+    const vectorizedDataTablePath = path.join(process.cwd(), 'src/doc/vectorized-data/table/vectorized-data.json');
+    const vectorizedDataApiPath = path.join(process.cwd(), 'src/doc/vectorized-data/api/vectorized-data.json');
+    _vectorizedDataTable = JSON.parse(fs.readFileSync(vectorizedDataTablePath, 'utf-8'));
+    _vectorizedDataApi = JSON.parse(fs.readFileSync(vectorizedDataApiPath, 'utf-8'));
+  }
+  return { vectorizedDataTable: _vectorizedDataTable, vectorizedDataApi: _vectorizedDataApi };
+}
 
 // Function to find the top-k most similar API vectors
-function findTopKSimilarApi(queryEmbedding: number[], topK: number = 3, context?: RequestContext) {
+export interface TopKSimilarApiInput {
+  queryEmbedding: number[];
+  topK?: number;
+  context?: RequestContext;
+}
+
+export function findTopKSimilarApi({ queryEmbedding, topK = 3, context }: TopKSimilarApiInput) {
+  const { vectorizedDataApi } = getVectorizedData();
   return vectorizedDataApi
     .map((item: any) => {
       let tags: string[] = item.tags || [];
@@ -28,6 +48,7 @@ function findTopKSimilarApi(queryEmbedding: number[], topK: number = 3, context?
       const summaryHit = summary && (entityText.includes(summary) || summary.includes(entityText));
       if (tagHit) similarity += 0.15;
       if (summaryHit) similarity += 0.10;
+
       return {
         ...item,
         similarity,
@@ -39,6 +60,7 @@ function findTopKSimilarApi(queryEmbedding: number[], topK: number = 3, context?
 
 // Function to find the top-k most similar table vectors
 function findTopKSimilarTable(queryEmbedding: number[], topK: number = 3, context?: RequestContext) {
+  const { vectorizedDataTable } = getVectorizedData();
   return vectorizedDataTable
     .map((item: any) => {
       let tags: string[] = item.tags || [];
@@ -61,7 +83,6 @@ function findTopKSimilarTable(queryEmbedding: number[], topK: number = 3, contex
 export async function selectReferenceTask(
   refinedQuery: string,
   tasks: SavedTask[],
-  apiKey: string,
   intentType?: 'FETCH' | 'MODIFY'
 ): Promise<ReferenceTaskMatch> {
   if (!tasks || tasks.length === 0) return {};
@@ -98,30 +119,15 @@ Candidate tasks:
 ${JSON.stringify(shortlist, null, 2)}
 `;
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'Respond with JSON only. No prose.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.1,
-      max_tokens: 200,
-    }),
+  const content = await openaiChatCompletion({
+    messages: [
+      { role: 'system', content: 'Respond with JSON only. No prose.' },
+      { role: 'user', content: prompt },
+    ],
+    model: 'gpt-4o-mini',
+    temperature: 0.1,
+    max_tokens: 200,
   });
-
-  if (!res.ok) {
-    console.warn('Task similarity LLM failed:', await res.text());
-    return {};
-  }
-
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content?.trim() || '';
   try {
     const parsed = JSON.parse(content.replace(/```json|```/g, ''));
     const taskId = parsed.taskId;
@@ -138,7 +144,7 @@ ${JSON.stringify(shortlist, null, 2)}
 
 
 // 独立函数：多实体embedding检索与API过滤
-export async function getAllMatchedApis({ entities, intentType, apiKey, context }: { entities: string[], intentType: "FETCH" | "MODIFY", apiKey: string, context?: RequestContext }): Promise<Map<string, any>> {
+export async function getAllMatchedApis({ entities, intentType, context }: { entities: string[], intentType: "FETCH" | "MODIFY", context?: RequestContext }): Promise<Map<string, any>> {
   // Always use TABLE embeddings for data fetch context, even when the overall task is MODIFY.
   const allMatchedApis = new Map();
   console.log(`🔎 Retrieval mode decision: intentType=${intentType}, always including TABLE/SQL for reads; adding API matches for MODIFY.`);
@@ -149,7 +155,7 @@ export async function getAllMatchedApis({ entities, intentType, apiKey, context 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model: 'text-embedding-ada-002',
@@ -175,7 +181,7 @@ export async function getAllMatchedApis({ entities, intentType, apiKey, context 
 
     if (intentType === 'MODIFY') {
       // API retrieval remains available (needed for mutation steps)
-      const apiResults = findTopKSimilarApi(entityEmbedding, 10, context);
+      const apiResults = await taskSelectorService({queryEmbedding: entityEmbedding as number[], topK: 10, context: context as any});
       console.log(`Found ${apiResults.length} APIs for entity "${entity}"`);
       // console.log(`Found ${apiResults.length} APIs for entity "${entity}":`,
       //   apiResults.map((item: any) => ({ id: item.id, similarity: item.similarity.toFixed(3) }))

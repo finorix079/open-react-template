@@ -70,6 +70,7 @@ export async function fetchTaskList(token: string): Promise<SavedTask[]> {
     },
   });
 
+
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || 'Failed to fetch task list');
@@ -93,6 +94,7 @@ export async function saveTask(payload: TaskPayload, token: string): Promise<voi
     },
     body: JSON.stringify(payload),
   });
+
 
   if (!res.ok) {
     const text = await res.text();

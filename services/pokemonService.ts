@@ -66,11 +66,13 @@ export const searchPokemon = async ({
       }
     );
 
+
     if (!response.ok) {
       throw new Error("Pokémon not found");
     }
 
-    return response.json();
+    const data = await response.json();
+    return data;
   } catch (error: any) {
     console.warn("Error searching Pokémon:", error);
     throw error;
@@ -92,10 +94,12 @@ export const searchMove = async ({ searchterm = '', page = 0 }: { searchterm?: s
         }),
       }
     );
+
     if (!response.ok) {
       throw new Error("Move not found");
     }
-    return response.json();
+    const data = await response.json();
+    return data;
   } catch (error: any) {
     console.warn("Error searching Move:", error);
     throw error;
@@ -130,6 +134,7 @@ export const searchAbility = async ({ searchterm = '', page = 0 }: { searchterm?
         }),
       }
     );
+
     if (!response.ok) {
       throw new Error("Ability not found");
     }

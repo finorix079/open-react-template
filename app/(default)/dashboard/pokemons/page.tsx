@@ -3,12 +3,12 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  searchPokemon,
   getWatchlist,
   addToWatchlist,
   removeFromWatchlist,
 } from "@/services/pokemonService";
 import { getTypeClass } from "@/services/typeStyleService";
+import { searchPokemon } from "@/services/pokemonService";
 
 const PokemonPageContent = () => {
   const router = useRouter();

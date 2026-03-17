@@ -24,6 +24,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
 
 # local env files
 .env*.local
@@ -44,3 +45,5 @@ temp/
 dist/
 
 rag_apis.json
+package-test.json
+package-actual.json

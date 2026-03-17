@@ -1,11 +1,11 @@
 import { selectReferenceTask } from "@/services/taskSelectorService";
 import { fetchTaskList, SavedTask } from "@/services/taskService";
-import path from 'path';
-import fs from 'fs';
+import { openaiChatCompletion } from '@/utils/aiHandler';
+// import path from 'path';
+// import fs from 'fs';
 
 export async function clarifyAndRefineUserInput(
   userInput: string,
-  apiKey: string,
   userToken?: string
 ): Promise<{ 
   refinedQuery: string,
@@ -16,6 +16,7 @@ export async function clarifyAndRefineUserInput(
   intentType: "FETCH" | "MODIFY",
   referenceTask?: SavedTask
 }> {
+  console.log('🔍 Starting query refinement for user input:', userInput);
   // Extract current query from context if present
   let currentQuery = userInput;
   let contextHistory = '';
@@ -27,7 +28,7 @@ export async function clarifyAndRefineUserInput(
   }
   
   // Build the prompt with CURRENT query emphasized as PRIMARY
-  const systemPrompt = `You are an assistant that refines user queries and identifies what needs to be investigated to answer them.
+  const systemPrompt = `You are an expert that refines user queries and identifies what needs to be investigated to answer them.
 
 CRITICAL - DATABASE RULES:
 ==========================
@@ -171,32 +172,21 @@ IntentType: ["FETCH"/"MODIFY"]`;
     ? `HISTORICAL CONTEXT (for reference only):\n${contextHistory}\n\n========================================\nCURRENT QUERY (PRIMARY FOCUS):\n${currentQuery}`
     : currentQuery;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
-        },
-        {
-          role: 'user',
-          content: userMessage,
-        },
-      ],
-      temperature: 0.5,
-      max_tokens: 4096,
-    }),
+  const content = await openaiChatCompletion({
+    messages: [
+      {
+        role: 'system',
+        content: systemPrompt,
+      },
+      {
+        role: 'user',
+        content: userMessage,
+      },
+    ],
+    temperature: 0.5,
+    max_tokens: 4096,
   });
-
-  const data = await response.json();
-  console.log('Validator Response 2:', data);
-  const content = data.choices[0]?.message?.content || `Refined Query: ${userInput}\nLanguage: EN\nConcepts: []\nAPI Needs: []\nEntities: []`;
+  console.log('Validator Response 2:', content);
 
   const refinedQueryMatch = content.match(/Refined Query: (.+)\nLanguage:/);
   const languageMatch = content.match(/Language: (.+)\nConcepts:/);
@@ -220,21 +210,21 @@ IntentType: ["FETCH"/"MODIFY"]`;
       console.log(`\n🔍 Fetching saved tasks for reference matching (intent: ${intentType})...`);
       const tasks = await fetchTaskList(userToken);
       console.log('Fetched tasks: ', tasks);
-      // Log fetched tasks to file (server-side only)
-      try {
-        const logPath = path.join(process.cwd(), '.temp', 'tasks_fetched.txt');
+      // // Log fetched tasks to file (server-side only)
+      // try {
+      //   const logPath = path.join(process.cwd(), '.temp', 'tasks_fetched.txt');
         
-        const timestamp = new Date().toISOString();
-        const logContent = `\n=== Tasks Fetched at ${timestamp} ===\n` +
-          `Total tasks: ${tasks.length}\n\n` +
-          JSON.stringify(tasks, null, 2) + '\n';
+      //   const timestamp = new Date().toISOString();
+      //   const logContent = `\n=== Tasks Fetched at ${timestamp} ===\n` +
+      //     `Total tasks: ${tasks.length}\n\n` +
+      //     JSON.stringify(tasks, null, 2) + '\n';
         
-        await fs.writeFileSync(logPath, logContent);
-        console.log(`Logged fetched tasks to ${logPath}`);
-      } catch (err) {
-        console.error('Failed to log tasks to file:', err);
-      }
-      const match = await selectReferenceTask(refinedQuery, tasks, apiKey, intentType);
+      //   await fs.writeFileSync(logPath, logContent);
+      //   console.log(`Logged fetched tasks to ${logPath}`);
+      // } catch (err) {
+      //   console.error('Failed to log tasks to file:', err);
+      // }
+      const match = await selectReferenceTask(refinedQuery, tasks, intentType);
       console.log('Reference task matching result: ', match);
       if (match.task && typeof match.score === 'number') {
         referenceTask = match.task;
@@ -249,6 +239,7 @@ IntentType: ["FETCH"/"MODIFY"]`;
 
   console.log('✅ Query Refinement Result:', { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask });
 
+  console.log('Recording query refinement tool call with parameters and result');
   return { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask };
 }
 

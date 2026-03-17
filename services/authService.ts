@@ -7,6 +7,7 @@ export const login = async (username: string, password: string) => {
     body: JSON.stringify({ username, password }),
   });
 
+
   if (!response.ok) {
     throw new Error("Login failed");
   }
@@ -20,6 +21,7 @@ export const validateToken = async (token: string) => {
       Authorization: `Bearer ${token}`,
     },
   });
+
 
   if (!response.ok) {
     throw new Error("Token validation failed");

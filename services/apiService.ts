@@ -111,6 +111,7 @@ export async function dynamicApiRequest(baseUrl: string, schema: any, userToken?
 
     // Send the request
     const response = await axios(config);
+
     return response.data;
   } catch (error) {
     console.error('Error in dynamicApiRequest:', error);
