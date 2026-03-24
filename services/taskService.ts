@@ -104,12 +104,12 @@ export async function saveTask(payload: TaskPayload, token: string): Promise<voi
   // Log saved task to file (server-side only)
   if (typeof window === 'undefined') {
     try {
-      const path = require('path');
-      const fs = require('fs').promises;
-      const logPath = path.join(process.cwd(), '.temp', 'tasks_fetched.txt');
+      const path = await import('path');
+      const fs = await import('fs/promises');
+      const logPath = path.default.join(process.cwd(), '.temp', 'tasks_fetched.txt');
       
       // Ensure .temp directory exists
-      await fs.mkdir(path.dirname(logPath), { recursive: true });
+      await fs.default.mkdir(path.default.dirname(logPath), { recursive: true });
       
       const timestamp = new Date().toISOString();
       const logContent = `\n=== Task Saved at ${timestamp} ===\n` +
@@ -119,7 +119,7 @@ export async function saveTask(payload: TaskPayload, token: string): Promise<voi
         `Full Payload:\n` +
         JSON.stringify(payload, null, 2) + '\n';
       
-      await fs.appendFile(logPath, logContent);
+      await fs.default.appendFile(logPath, logContent);
     } catch (err) {
       console.error('Failed to log saved task to file:', err);
     }

@@ -2,6 +2,7 @@
 // Watchlist service (to manage user watchlist entries)
 import { watchlistAdd, watchlistRemove } from '@/services/watchlistService';
 import OpenAI from 'openai';
+import { wrapAI } from 'elasticdash-test/http';
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { observeOpenAI } from "@langfuse/openai";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
@@ -573,7 +574,7 @@ const sdk = new NodeSDK({
  
 sdk.start();
 
-export async function kimiChatCompletion({
+export const kimiChatCompletion = wrapAI('kimi-k2', async ({
 	messages,
 	model = 'kimi-k2-turbo-preview',
 	temperature = 0.0,
@@ -587,9 +588,9 @@ export async function kimiChatCompletion({
 	max_tokens?: number;
 	systemPrompt?: string;
   	sessionId?: string;
-}) {
+}) => {
 	model = 'kimi-k2-turbo-preview';
-	const openai = new OpenAI({ 
+	const openai = new OpenAI({
 		apiKey: process.env.KIMI_API_KEY,
 		baseURL: "https://api.moonshot.ai/v1",
 	});
@@ -618,7 +619,7 @@ export async function kimiChatCompletion({
 			: (error as Error).message || 'Kimi OpenAI API error'
 		);
 	}
-}
+});
 
 /**
  * Calls the OpenAI Chat Completion API with the provided parameters.
@@ -633,7 +634,7 @@ export async function kimiChatCompletion({
  * @returns The trimmed content of the first response message
  * @throws Error if the OpenAI API call fails
  */
-export async function openaiChatCompletionOriginal({
+export const openaiChatCompletionOriginal = wrapAI('gpt-4o', async ({
 	messages,
 	model = 'gpt-4o',
 	temperature = 0.0,
@@ -646,10 +647,10 @@ export async function openaiChatCompletionOriginal({
 	temperature?: number;
 	max_tokens?: number;
 	systemPrompt?: string;
-  	sessionId?: string;
-}) {
+	sessionId?: string;
+}) => {
 	const openai = new OpenAI({ apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY });
-    const client = observeOpenAI(openai);
+	const client = observeOpenAI(openai);
 	const chatMessages: ChatCompletionMessageParam[] = systemPrompt
 		? [{ role: 'system', content: systemPrompt } as ChatCompletionMessageParam, ...messages]
 		: messages;
@@ -671,7 +672,7 @@ export async function openaiChatCompletionOriginal({
 			: (error as Error).message || 'OpenAI API error'
 		);
 	}
-}
+});
 
 export const openaiChatCompletion = openaiChatCompletionOriginal;
 
