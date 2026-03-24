@@ -1,8 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import axios from 'axios';
 import dotenv from 'dotenv';
 dotenv.config();
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const openApiDir = path.join(__dirname, '../doc/openapi-doc');
 const sqlDir = path.join(__dirname, '../doc/sql');

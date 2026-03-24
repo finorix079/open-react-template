@@ -1,7 +1,10 @@
 require('dotenv').config();
 
 /** @type {import('next').NextConfig} */
-const nextConfig = {
+const nextConfig = {                                                                                                                                                                                   
+  experimental: {                                                                                                                                                                                          
+    externalDir: true,   // allow imports from outside the project root                                                                                                                                    
+  },
   serverExternalPackages: [
     '@opentelemetry/sdk-node',
     '@opentelemetry/context-async-hooks',

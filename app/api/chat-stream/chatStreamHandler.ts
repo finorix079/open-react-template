@@ -3,20 +3,20 @@
  *
  * Testable wrapper around POST /api/chat-stream for the elasticdash framework.
  *
- * THIS FILE IS INTENTIONALLY SEPARATE FROM route.ts.
- * It imports `elasticdash-test` (a worker-only package) and must never be
- * imported by route.ts or any other file that Next.js bundles. It is only
- * imported by ed_workflows.ts, which the elasticdash CLI loads in a
- * subprocess where the package is available.
+ * Uses HTTP mode: calls the running Next.js dev server via fetch instead of
+ * importing the route handler directly. Start the project first before running
+ * tests or the dashboard.
  *
- * See docs/elasticdash-next-import-guide.md for the full explanation.
+ * Startup order:
+ *   1. npm run dev          — start the project (port 3001)
+ *   2. npx elasticdash dashboard — start the dashboard (port 4573)
  */
 
-import { NextRequest } from 'next/server';
 import { readVercelAIStream, recordToolCall } from 'elasticdash-test';
 import type { VercelAIStreamResult } from 'elasticdash-test';
 import type { Message } from '@/services/chatPlannerService';
-import { POST } from './route';
+
+const APP_URL = process.env.APP_URL ?? 'http://localhost:3001';
 
 /**
  * `ChatStreamResult` is the structured return type of `chatStreamHandler`.
@@ -39,9 +39,9 @@ export interface ChatStreamInput {
 }
 
 /**
- * Inner implementation: constructs a NextRequest and calls the POST handler
- * directly (no HTTP server required), then parses the Vercel AI SDK data-stream
- * response into a structured `ChatStreamResult`.
+ * Inner implementation: calls the running dev server at APP_URL/api/chat-stream
+ * via fetch, then parses the Vercel AI SDK data-stream response into a
+ * structured `ChatStreamResult`.
  */
 async function _chatStreamHandlerImpl({
   messages,
@@ -57,13 +57,15 @@ async function _chatStreamHandlerImpl({
   if (testCaseId) headers['x-reset-test-case'] = testCaseId;
   if (testCaseRunRecordId) headers['x-reset-test-case-run-record'] = testCaseRunRecordId;
 
-  const req = new NextRequest('http://localhost/api/chat-stream', {
+  const response = await fetch(`${APP_URL}/api/chat-stream`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ messages, ...(sessionId ? { sessionId } : {}) }),
+  })
+  .catch(err => {
+    console.error('Network error calling chat-stream API:', err);
+    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   });
-
-  const response = await POST(req);
 
   // The route returns a plain JSON error (no stream) when env vars are missing
   // or the request fails validation. Surface the message rather than returning
@@ -84,8 +86,7 @@ async function _chatStreamHandlerImpl({
 
 /**
  * Callable wrapper around POST /api/chat-stream for use as an elasticdash
- * workflow function. Calls the route directly without requiring a running
- * HTTP server.
+ * workflow function. Calls the live dev server via fetch.
  *
  * `recordToolCall` is called manually after completion rather than via `wrapTool`.
  * This avoids the `wrapTool` deduplication flag that would suppress inner tool

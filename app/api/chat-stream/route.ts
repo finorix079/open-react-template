@@ -36,6 +36,7 @@ import { runPlannerWithInputs } from '../chat/plannerUtils';
 import { executeIterativePlanner } from '../chat/executor';
 import { queryRefinement } from '@/ed_tools';
 import { agentTools } from '@/utils/aiHandler';
+import { setHttpRunContext, wrapAI } from 'elasticdash-test/http';
 import { startActiveObservation } from '@langfuse/tracing';
 import type { LangfuseSpan } from '@langfuse/tracing';
 import { writeTextDelta, writeFinishStep, writeFinishMessage, writeMessageStart, writeError, writeResult, writeStatus, writePlan } from '@/utils/aiDataStream';
@@ -118,14 +119,51 @@ function storePendingPlan(
 // ---------------------------------------------------------------------------
 
 /**
- * Uses Anthropic Claude streaming to generate and emit the final answer as text-delta events.
- * The executor result and any useful data are passed as context.
+ * wrapAI-traced Anthropic call for the final answer synthesis step.
+ * Accepts only serialisable inputs so the elasticdash dashboard can record
+ * and replay the call. Real-time token streaming is handled by the caller
+ * writing the returned text to the ReadableStream controller.
+ */
+const anthropicFinalAnswer = wrapAI(
+  'claude-sonnet-final-answer',
+  async ({
+    userContent,
+    apiKey,
+  }: {
+    userContent: string;
+    apiKey: string;
+  }): Promise<{ text: string; tokens: number }> => {
+    const provider = createAnthropic({ apiKey });
+    const { textStream, usage } = streamText({
+      model: provider('claude-sonnet-4-5-20250929'),
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a helpful assistant. Synthesise the execution result into a clear, concise answer for the user.',
+        },
+        { role: 'user', content: userContent },
+      ],
+    });
+
+    let text = '';
+    for await (const delta of textStream) {
+      text += delta;
+    }
+    const { outputTokens } = await usage;
+    return { text, tokens: outputTokens ?? 0 };
+  },
+);
+
+/**
+ * Calls Anthropic Claude to generate the final answer, then emits the full
+ * text as a single text-delta event on the ReadableStream controller.
  *
- * @param controller      - The ReadableStream controller to enqueue events onto.
- * @param executorMessage - The message produced by executeIterativePlanner.
- * @param refinedQuery    - The refined user query (used as system context).
- * @param anthropicApiKey - Anthropic API key.
- * @param usefulData      - Optional serialised useful-data string from the request context.
+ * @param controller           - The ReadableStream controller to enqueue events onto.
+ * @param executorMessage      - The message produced by executeIterativePlanner.
+ * @param refinedQuery         - The refined user query (used as system context).
+ * @param anthropicApiKey      - Anthropic API key.
+ * @param usefulData           - Optional serialised useful-data string from the request context.
  * @param executedStepsSummary - Optional pre-formatted markdown block of steps taken.
  * @returns Total completion tokens used (for usage reporting).
  */
@@ -137,38 +175,15 @@ async function streamFinalAnswer(
   usefulData?: string,
   executedStepsSummary?: string,
 ): Promise<{ tokens: number; text: string }> {
-  const provider = createAnthropic({ apiKey: anthropicApiKey });
-
   const userContent = usefulData
     ? `Question: ${refinedQuery}\n\nData collected:\n${usefulData}\n\nExecution result: ${executorMessage}`
     : `Question: ${refinedQuery}\n\nExecution result: ${executorMessage}`;
 
-  const { textStream, usage } = streamText({
-    model: provider('claude-sonnet-4-5-20250929'),
-    messages: [
-      {
-        role: 'system',
-        content:
-          'You are a helpful assistant. Synthesise the execution result into a clear, concise answer for the user.',
-      },
-      { role: 'user', content: userContent },
-    ],
-  });
+  const { text, tokens } = await anthropicFinalAnswer({ userContent, apiKey: anthropicApiKey });
 
-  let accumulatedText = '';
-  for await (const delta of textStream) {
-    accumulatedText += delta;
-    writeTextDelta(controller, delta);
-  }
-
-  if (executedStepsSummary) {
-    const suffix = `\n\n---\n\n${executedStepsSummary}`;
-    accumulatedText += suffix;
-    writeTextDelta(controller, suffix);
-  }
-
-  const { outputTokens } = await usage;
-  return { tokens: outputTokens ?? 0, text: accumulatedText };
+  const fullText = executedStepsSummary ? `${text}\n\n---\n\n${executedStepsSummary}` : text;
+  writeTextDelta(controller, fullText);
+  return { tokens, text: fullText };
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +198,14 @@ async function streamFinalAnswer(
  * plan approval gating, plan execution, and final answer streaming.
  */
 export async function POST(request: NextRequest): Promise<Response> {
+  // Register ElasticDash HTTP run context so wrapAI/wrapTool calls push
+  // telemetry events back to the dashboard in real time.
+  const edRunId = request.headers.get('x-elasticdash-run-id');
+  const edServer = request.headers.get('x-elasticdash-server');
+  if (edRunId && edServer) {
+    setHttpRunContext(edRunId, edServer);
+  }
+
   const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
   if (!apiKey) {
     return new Response(JSON.stringify({ error: 'OpenAI API key not configured' }), {
@@ -202,7 +225,9 @@ export async function POST(request: NextRequest): Promise<Response> {
   let rawBody: unknown;
   try {
     rawBody = await request.json();
-  } catch {
+    console.log('[chat-stream] raw body:', JSON.stringify(rawBody));
+  } catch (err) {
+    console.error('[chat-stream] failed to parse JSON body:', err);
     return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
@@ -211,11 +236,13 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const parsed = ChatStreamRequestSchema.safeParse(rawBody);
   if (!parsed.success) {
+    console.error('[chat-stream] schema validation failed:', parsed.error.flatten());
     return new Response(
       JSON.stringify({ error: parsed.error.message }),
       { status: 400, headers: { 'Content-Type': 'application/json' } },
     );
   }
+  console.log('[chat-stream] parsed ok — messages:', parsed.data.messages.length, 'sessionId:', parsed.data.sessionId);
 
   const authHeader = request.headers.get('Authorization') || '';
   const userToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';

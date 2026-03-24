@@ -32,8 +32,18 @@ import { runPlannerWithInputs } from './plannerUtils';
 // Executor
 import { generateFinalAnswer, executeIterativePlanner } from './executor';
 import { queryRefinement } from '@/ed_tools';
+import { setHttpRunContext } from 'elasticdash-test';
+// const setHttpRunContext = (_runId: string, _serverUrl: string) => {}
 
 const chatHandlerWrapper = async (request: NextRequest) => {
+  // Register ElasticDash HTTP run context so wrapAI/wrapTool calls push
+  // telemetry events back to the dashboard in real time.
+  const edRunId = request.headers.get('x-elasticdash-run-id');
+  const edServer = request.headers.get('x-elasticdash-server');
+  if (edRunId && edServer) {
+    setHttpRunContext(edRunId, edServer);
+  }
+
   // Create request-local context to prevent race conditions
 
   let testCaseId = request.headers.get('x-reset-test-case') || '';
