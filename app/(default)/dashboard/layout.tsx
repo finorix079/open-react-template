@@ -1,41 +1,23 @@
 "use client";
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 
 import { ReactNode } from 'react';
 import ChatWidget2 from '@/components/chat-widget-2';
-// import { LiveChatWidget } from '@livechat/widget-react';
 
 interface DashboardLayoutProps {
   children: ReactNode;
 }
 
 const DashboardLayout = ({ children }: DashboardLayoutProps) => {
-  const router = useRouter();
   const pathname = usePathname();
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      router.push('/signin');
-    }
-  }, [router]);
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    router.push('/signin');
-  };
-
   const navItems = [
-    { label: 'Pokémons', href: '/dashboard/pokemons', icon: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg> },
-    { label: 'Moves', href: '/dashboard/moves', icon: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg> },
-    // { label: 'Berries', href: '/dashboard/berries', icon: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg> },
-    { label: 'Abilities', href: '/dashboard/abilities', icon: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg> },
-    { label: 'Watchlist', href: '/dashboard/watchlist', icon: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg> },
-    // { label: 'Teams', href: '/dashboard/teams', icon: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg> },
-  ]
+    { label: 'Pokémons', href: '/dashboard/pokemons' },
+    { label: 'Moves', href: '/dashboard/moves' },
+    { label: 'Abilities', href: '/dashboard/abilities' },
+  ];
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -47,7 +29,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
           <nav className="flex-1 space-y-1 overflow-y-auto px-3">
             {navItems.map((item) => {
-              const isActive = pathname === item.href
+              const isActive = pathname === item.href;
 
               return (
                 <Link
@@ -60,28 +42,18 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                 >
                   {item.label}
                 </Link>
-              )
+              );
             })}
           </nav>
 
           <div className="border-t border-border p-4">
-            <button
-              onClick={handleLogout}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
-              </svg>
-              Log Out
-            </button>
-            <p className="mt-3 font-mono text-xs text-muted-foreground">Active Database: Gen I-II</p>
+            <p className="font-mono text-xs text-muted-foreground">Powered by PokéAPI</p>
           </div>
         </aside>
         <main className="ml-64 h-screen overflow-y-auto p-4 flex-1">
             {children}
         </main>
         <ChatWidget2 />
-        {/* <LiveChatWidget license="12332502" group="0" />  */}
     </div>
   );
 };

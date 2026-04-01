@@ -75,6 +75,7 @@ export async function dynamicApiRequest(baseUrl: string, schema: any, userToken?
 
     // Replace path parameters like {id} with actual values
     let finalPath = path;
+    const queryParams: Record<string, string> = {};
 
     console.log('Path parameter replacement:');
     console.log('  - Original path:', path);
@@ -88,18 +89,33 @@ export async function dynamicApiRequest(baseUrl: string, schema: any, userToken?
       Object.entries(pathParams).forEach(([key, value]) => {
         const placeholder = `{${key}}`;
         if (finalPath.includes(placeholder)) {
-          finalPath = finalPath.replace(placeholder, String(value));
+          finalPath = finalPath.replace(placeholder, encodeURIComponent(String(value)));
           console.log(`  ✅ Replaced ${placeholder} with ${value} in path`);
+        } else if (value !== undefined && value !== null && value !== '') {
+          // Remaining params become query string entries for GET requests
+          queryParams[key] = String(value);
         }
       });
     }
 
-    console.log('  - Final path:', finalPath);
+    // For PokéAPI list endpoints (path ends with a resource name, no specific ID),
+    // apply a default page limit so responses stay within token budgets.
+    const isListEndpoint = /^\/(pokemon|move|ability|berry)\/?$/.test(finalPath);
+    if (method.toLowerCase() === 'get' && isListEndpoint && !queryParams['limit']) {
+      queryParams['limit'] = '20';
+      console.log('  ℹ️  Applied default limit=20 for PokéAPI list endpoint');
+    }
+
+    const queryString = Object.keys(queryParams).length
+      ? '?' + new URLSearchParams(queryParams).toString()
+      : '';
+
+    console.log('  - Final path:', finalPath + queryString);
 
     // Configure the request
     const config: AxiosRequestConfig = {
       method: method.toLowerCase(),
-      url: `${baseUrl}${finalPath}`,
+      url: `${baseUrl}${finalPath}${queryString}`,
       data: requestBody ? requestBody : undefined,
       headers: {
         'Content-Type': 'application/json',

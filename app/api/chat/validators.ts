@@ -58,6 +58,19 @@ Intent:`,
   }
 }
 
+/** Max characters of serialized step/result data sent to the validator LLM (~15K tokens). */
+const VALIDATOR_DATA_CHAR_LIMIT = 60_000;
+
+/**
+ * Serializes data for the validator, truncating large fields (e.g. PokéAPI move lists,
+ * sprites) that would otherwise exceed the model's context window.
+ */
+function truncateForValidator(data: unknown): string {
+  const serialized = JSON.stringify(data, null, 2);
+  if (serialized.length <= VALIDATOR_DATA_CHAR_LIMIT) return serialized;
+  return serialized.slice(0, VALIDATOR_DATA_CHAR_LIMIT) + '\n... [truncated for length]';
+}
+
 /**
  * Validates whether more API actions are needed to complete the original user goal.
  * Returns a decision with reasoning and optional next-action suggestion.
@@ -276,9 +289,9 @@ These tools show what capabilities are available. If a tool returns an array,
 counts can be derived via array.length. DO NOT request count endpoints.
 ` : ''}
 
-Executed Steps (with responses): ${JSON.stringify(executedSteps, null, 2)}
+Executed Steps (with responses): ${truncateForValidator(executedSteps)}
 
-Accumulated Results: ${JSON.stringify(accumulatedResults, null, 2)}
+Accumulated Results: ${truncateForValidator(accumulatedResults)}
 
 IMPORTANT:
 1. Check if the last execution plan had multiple steps (e.g., fetching data for multiple IDs)

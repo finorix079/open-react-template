@@ -32,8 +32,9 @@ import { runPlannerWithInputs } from './plannerUtils';
 // Executor
 import { generateFinalAnswer, executeIterativePlanner } from './executor';
 import { queryRefinement } from '@/ed_tools';
-import { setHttpRunContext } from 'elasticdash-test';
-// const setHttpRunContext = (_runId: string, _serverUrl: string) => {}
+// setHttpRunContext is loaded via dynamic import inside the handler to avoid
+// a static reference to elasticdash-test which cannot be resolved by Turbopack
+// at build time (serverExternalPackages handles dynamic imports at runtime).
 
 const chatHandlerWrapper = async (request: NextRequest) => {
   // Register ElasticDash HTTP run context so wrapAI/wrapTool calls push
@@ -41,7 +42,16 @@ const chatHandlerWrapper = async (request: NextRequest) => {
   const edRunId = request.headers.get('x-elasticdash-run-id');
   const edServer = request.headers.get('x-elasticdash-server');
   if (edRunId && edServer) {
-    setHttpRunContext(edRunId, edServer);
+    try {
+      // initHttpRunContext fetches frozen events (for reruns) and sets ALS context
+      // via enterWith() so wrapTool/wrapAI calls can push telemetry to the dashboard.
+      // eval('require') bypasses Turbopack's static "Module not found" stub.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { initHttpRunContext } = (eval('require') as (id: string) => any)('elasticdash-test');
+      await initHttpRunContext(edRunId, edServer);
+    } catch {
+      // elasticdash-test not available — proceed without dashboard context
+    }
   }
 
   // Create request-local context to prevent race conditions
@@ -594,29 +604,45 @@ export async function chatHandler(
               metadata: { sessionId, refinedQuery },
               tasks: actionablePlan.execution_plan.map((step: any, idx: number) => {
                 // Map API path/method to toolName
+                // Map execution step path to a PokéAPI agentTool name
                 let toolName = '';
-                let inputPayload: unknown = step.api.requestBody || {};
+                let inputPayload: unknown = step.api.parameters || {};
 
-                // SQL query execution
-                if (step.api.path === '/general/sql/query' && step.api.method === 'post') {
-                  toolName = 'dataService';
+                const apiPath: string = (step.api.path || '').replace(/\/$/, '');
+                const pathSegments = apiPath.split('/').filter(Boolean);
+                // pathSegments[0] = resource ("pokemon"|"move"|"ability"|"berry")
+                // pathSegments[1] = optional name/id (e.g. "pikachu", "25")
+                const resource = pathSegments[0] || '';
+                const nameOrId = pathSegments[1];
+
+                if (resource === 'pokemon' && nameOrId) {
+                  // /pokemon/{idOrName} — fetch full details
+                  toolName = 'fetchPokemonDetails';
+                  const parsed = Number(nameOrId);
+                  inputPayload = { id: isNaN(parsed) ? nameOrId : parsed };
+                } else if (resource === 'pokemon') {
+                  // /pokemon — search/list
+                  toolName = 'searchPokemon';
+                  inputPayload = step.api.parameters || {};
+                } else if (resource === 'move') {
+                  toolName = 'searchMove';
+                  inputPayload = nameOrId
+                    ? { name: nameOrId, ...step.api.parameters }
+                    : (step.api.parameters || {});
+                } else if (resource === 'ability') {
+                  toolName = 'searchAbility';
+                  inputPayload = nameOrId
+                    ? { name: nameOrId, ...step.api.parameters }
+                    : (step.api.parameters || {});
+                } else if (resource === 'berry') {
+                  toolName = 'searchBerry';
+                  inputPayload = nameOrId
+                    ? { name: nameOrId, ...step.api.parameters }
+                    : (step.api.parameters || {});
                 }
 
-                // Watchlist operations
-                if (step.api.path === '/pokemon/watchlist') {
-                  toolName = 'watchlistService';
-                  if (step.api.method === 'post') {
-                    inputPayload = { action: 'add', payload: step.api.requestBody, userToken };
-                  } else if (step.api.method === 'delete') {
-                    inputPayload = { action: 'remove', payload: step.api.requestBody, userToken };
-                  } else if (step.api.method === 'get') {
-                    inputPayload = { action: 'list', userToken };
-                  }
-                }
-
-                // Add more mappings as needed for other APIs
                 if (!toolName) {
-                  throw new Error(`No tool mapping found for API path: ${step.api.path}, method: ${step.api.method}`);
+                  throw new Error(`No PokéAPI tool mapping found for path: ${step.api.path}`);
                 }
                 return {
                   id: String(idx + 1),

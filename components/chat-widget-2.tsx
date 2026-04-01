@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { saveTask } from '@/services/taskService';
 import '../app/css/additional-styles/chat-widget.css';
 import Logo from './ui/logo';
 
@@ -62,7 +61,6 @@ export default function ChatWidget2() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
-  const [isSavingTask, setIsSavingTask] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // Tracks whether we're currently waiting for plan approval.
   // A ref (not state) so the stream-reading closure always sees the current value.
@@ -236,56 +234,6 @@ export default function ChatWidget2() {
         parameterizeNumericIds(obj[key]);
       }
     }
-  };
-
-  const convertPlanToTaskPayload = (message: Message): TaskPayload => {
-    const plan = message.planSummary;
-    const text = message.content || '';
-    const refinedQuery = message.refinedQuery || text;
-
-    const taskName = extractTaskTemplateName(refinedQuery ?? '', plan?.goal ?? '');
-    const steps = plan?.steps || [];
-    const taskType = inferTaskTypeFromSteps(steps);
-
-    const mappedSteps = (steps.length ? steps : [{ description: text, api: 'GET' }]).map((step, idx) => {
-      const apiPart = step.api ? step.api.trim() : '';
-      const stepType = stepTypeFromApi(apiPart);
-
-      const apiDetails = parameterizeApiDetails(step, refinedQuery);
-      const methodForContent = apiDetails?.method ? apiDetails.method.toUpperCase() : (apiPart.split(' ')[0] || '').toUpperCase();
-      const pathForContent = apiDetails?.path || apiPart.split(' ').slice(1).join(' ');
-
-      const logicalDesc = (step.description || '').split('(')[0].trim() || 'Step';
-      const content = apiDetails ? `${logicalDesc} — ${methodForContent} ${pathForContent}` : (apiPart ? `${logicalDesc} — ${apiPart}` : logicalDesc);
-
-      const stepJsonContent = apiDetails ? {
-        method: methodForContent,
-        path: pathForContent,
-        query: apiDetails.parameters || {},
-        body: apiDetails.requestBody || {},
-      } : undefined;
-
-      return {
-        stepOrder: idx + 1,
-        stepType,
-        stepContent: sanitizeContent(content),
-        stepJsonContent,
-        api: apiDetails,
-        depends_on_step: step.depends_on_step,
-      };
-    });
-
-    const logicalSummary = mappedSteps.map((s) => `- ${s.stepContent}`).join('\n');
-    const taskContent = sanitizeContent(`Goal: ${taskName}\nSteps:\n${logicalSummary}`);
-
-    return {
-      taskName,
-      taskType,
-      taskContent,
-      taskSteps: mappedSteps,
-      originalQuery: refinedQuery,
-      planResponse: message.planResponse,
-    };
   };
 
   const scrollToBottom = () => {
@@ -496,27 +444,6 @@ export default function ChatWidget2() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
-    }
-  };
-
-  const handleSaveTask = async (message: Message) => {
-    if (!message.planSummary) return;
-    setIsSavingTask(true);
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        alert('Please sign in before saving tasks.');
-        return;
-      }
-
-      const payload = convertPlanToTaskPayload(message);
-      await saveTask(payload, token);
-      alert('Task saved successfully');
-    } catch (err) {
-      console.warn('Error saving task', err);
-      alert('Could not save the task. Please try again.');
-    } finally {
-      setIsSavingTask(false);
     }
   };
 
