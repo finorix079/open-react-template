@@ -77,6 +77,6 @@ To enforce that tests must pass before merging, configure branch protection rule
 
 | Issue | Solution |
 |-------|---------|
-| `pnpm install` fails | The `elasticdash-test` local dependency is expected to be missing in CI. The `--no-frozen-lockfile` flag handles this. If other dependencies fail, check the `pnpm-lock.yaml` is committed. |
+| `pnpm install` fails | The `elasticdash-test` local dependency (`file:../elasticdash-test-js`) does not exist in CI. The workflow strips it from `package.json` before install. If other dependencies fail, check the `pnpm-lock.yaml` is committed. |
 | Tests pass locally but fail in CI | Check for environment-specific code (file paths, env vars). CI runs on `ubuntu-latest` with Node.js 20. |
 | Workflow not triggering | Verify the branch name is `master` (not `main`). Check the workflow file is on the target branch. |
