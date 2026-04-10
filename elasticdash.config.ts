@@ -41,5 +41,17 @@ export default {
       },
       responseFormat: 'vercel-ai-stream' as const,
     },
+    streamingTest: {
+      mode: 'http' as const,
+      url: `${APP_URL}/api/streaming-test`,
+      method: 'POST' as const,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      bodyTemplate: {
+        messages: '{{input.messages}}',
+      },
+      responseFormat: 'vercel-ai-stream' as const,
+    },
   },
 };

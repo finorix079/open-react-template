@@ -1,16 +1,37 @@
 // --- Agentic Tool Definitions ---
-// Watchlist service (to manage user watchlist entries)
-import { watchlistAdd, watchlistRemove } from '@/services/watchlistService';
 import OpenAI from 'openai';
-import { wrapAI } from 'elasticdash-test/http';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WrapAIFn = <T extends (...args: any[]) => any>(name: string, fn: T) => T;
+// Use the real wrapAI from elasticdash-test (supports AI mocking and auto-telemetry).
+// Falls back to a passthrough stub if the package is unavailable at runtime.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let wrapAI: WrapAIFn = (_name: string, fn: any) => fn;
+try {
+  // eval('require') bypasses Turbopack's static analysis which shows "Module not found"
+  // for serverExternalPackages entries and replaces require() with an error stub at runtime.
+  // Node.js resolves elasticdash-test natively via the CJS export (dist/index.cjs).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  wrapAI = (eval('require') as (id: string) => any)('elasticdash-test').wrapAI ?? wrapAI;
+} catch {
+  // Not in elasticdash context — passthrough stub remains active
+}
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { observeOpenAI } from "@langfuse/openai";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { LangfuseObservation, LangfuseSpan, LangfuseTool } from "@langfuse/tracing";
 import { startActiveObservation } from "@langfuse/tracing";
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import { RequestContext } from '@/services/chatPlannerService';
-import { apiService, checkApprovalStatus, dataService, pokemonService, queryRefinement, taskSelectorService, watchlistService } from '@/ed_tools';
+import {
+  apiService,
+  // checkApprovalStatus,
+  // dataService,
+  fetchPokemonDetails,
+  queryRefinement,
+  searchAbility,
+  searchBerry,
+  searchMove,
+  searchPokemon,
+} from '@/ed_tools';
 
 async function executeWithObservation(
   parentObs: LangfuseObservation,
@@ -64,56 +85,60 @@ export const agentTools: Record<string, AgentTool> = {
 		},
 		description: "Refine and clarify user queries",
 	},
-	dataService: {
-		name: "dataService",
+	searchPokemon: {
+		name: "searchPokemon",
 		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
-			return executeWithObservation(parentObs, "dataService", input, async () => {
-				// const typedInput = input as { query: string };
-				return await dataService(input);
+			return executeWithObservation(parentObs, "searchPokemon", input, async () => {
+				return await searchPokemon(input);
 			});
 		},
-		description: "Run SELECT queries on database",
+		description: "Search Pokémon by name or list by page via PokéAPI",
 	},
-	pokemonService: {
-		name: "pokemonService",
+	fetchPokemonDetails: {
+		name: "fetchPokemonDetails",
 		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
-			return executeWithObservation(parentObs, "pokemonService", input, async () => {
-				return await pokemonService(input);
+			return executeWithObservation(parentObs, "fetchPokemonDetails", input, async () => {
+				return await fetchPokemonDetails(input);
 			});
 		},
-		description: "Search and manage Pokémon data",
+		description: "Fetch full Pokémon details (stats, types, abilities, moves) via PokéAPI",
 	},
-	taskSelectorService: {
-		name: "taskSelectorService",
+	searchMove: {
+		name: "searchMove",
 		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
-			return executeWithObservation(parentObs, "taskSelectorService", input, async () => {
-				const { queryEmbedding, topK, context } = input as { queryEmbedding: number[]; topK?: number; context?: unknown };
-				return await taskSelectorService({ queryEmbedding, topK, context: context as (RequestContext | undefined) });
+			return executeWithObservation(parentObs, "searchMove", input, async () => {
+				return await searchMove(input);
 			});
 		},
-		description: "Find top-k similar API tasks",
+		description: "Search moves by name or list by page via PokéAPI",
 	},
-	watchlistService: {
-		name: "watchlistService",
+	searchBerry: {
+		name: "searchBerry",
 		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
-			return executeWithObservation(parentObs, "watchlistService", input, async () => {
-				const { action, payload, userToken } = input as { action: 'add' | 'remove' | 'list'; payload?: any; userToken?: string };
-				if (action === 'add') return await watchlistAdd(payload, userToken);
-				if (action === 'remove') return await watchlistRemove(payload, userToken);
-				return await watchlistService(input);
+			return executeWithObservation(parentObs, "searchBerry", input, async () => {
+				return await searchBerry(input);
 			});
 		},
-		description: "Manage user Pokémon watchlist",
+		description: "Search berries by name or list by page via PokéAPI",
 	},
-	checkApprovalStatus: {
-		name: "checkApprovalStatus",
+	searchAbility: {
+		name: "searchAbility",
 		async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
-			return executeWithObservation(parentObs, "checkApprovalStatus", input, async () => {
-				return await checkApprovalStatus(input);
+			return executeWithObservation(parentObs, "searchAbility", input, async () => {
+				return await searchAbility(input);
 			});
 		},
-		description: "Check whether a pending plan has been approved or rejected by the user",
+		description: "Search abilities by name or list by page via PokéAPI",
 	},
+	// checkApprovalStatus: {
+	// 	name: "checkApprovalStatus",
+	// 	async execute(input: any, parentObs: LangfuseObservation): Promise<unknown> {
+	// 		return executeWithObservation(parentObs, "checkApprovalStatus", input, async () => {
+	// 			return await checkApprovalStatus(input);
+	// 		});
+	// 	},
+	// 	description: "Check whether a pending plan has been approved or rejected by the user",
+	// },
 };
 
 // ============================================================

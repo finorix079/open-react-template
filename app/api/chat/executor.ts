@@ -8,12 +8,64 @@ import { FanOutRequest } from '@/services/apiService';
 import { findApiParameters } from '@/services/apiSchemaLoader';
 import { SavedTask } from '@/services/taskService';
 import { getAllMatchedApis, getTopKResults, RequestContext } from '@/services/chatPlannerService';
-import { kimiChatCompletion, openaiChatCompletion } from '@/utils/aiHandler';
+import { kimiChatCompletion, openaiChatCompletion, agentTools } from '@/utils/aiHandler';
+import type { LangfuseObservation } from '@langfuse/tracing';
 import { sendToPlanner } from './planner';
 import { sanitizePlannerResponse, containsPlaceholderReference, resolvePlaceholders } from './plannerUtils';
 import { serializeUsefulDataInOrder } from './messageUtils';
 import { validateNeedMoreActions } from './validators';
 import { apiService } from '@/ed_tools';
+
+/**
+ * Derives the agentTools key and typed input from a plan step's API path and parameters,
+ * mapping planner-generated parameter names to the exact names each tool function expects.
+ *
+ * Mapping rules:
+ *   /pokemon/{name}  → fetchPokemonDetails  { id: string | number }
+ *   /pokemon         → searchPokemon        { searchterm: string, page: number }
+ *   /move/{name}     → searchMove           { searchterm: string, page: number }
+ *   /move            → searchMove           { searchterm: string, page: number }
+ *   /ability/{name}  → searchAbility        { searchterm: string, page: number }
+ *   /ability         → searchAbility        { searchterm: string, page: number }
+ *   /berry/{name}    → searchBerry          { query: string, page: number }
+ *   /berry           → searchBerry          { query: string, page: number }
+ *
+ * Returns null for unrecognised paths.
+ */
+function resolvePokeApiTool(
+  apiPath: string,
+  parameters: Record<string, unknown>
+): { toolName: string; input: Record<string, unknown> } | null {
+  const cleanPath = (apiPath || '').replace(/\/$/, '');
+  const segments = cleanPath.split('/').filter(Boolean);
+  const resource = segments[0] || '';
+  const nameOrId = segments[1];
+  const page = Number((parameters as any)?.page ?? 0);
+
+  if (resource === 'pokemon' && nameOrId) {
+    const parsed = Number(nameOrId);
+    return { toolName: 'fetchPokemonDetails', input: { id: isNaN(parsed) ? nameOrId : parsed } };
+  }
+  if (resource === 'pokemon') {
+    // Planner may pass `name` or `searchterm`; tool expects `searchterm`
+    const searchterm = String((parameters as any)?.searchterm ?? (parameters as any)?.name ?? '');
+    return { toolName: 'searchPokemon', input: { searchterm, page } };
+  }
+  if (resource === 'move') {
+    const searchterm = nameOrId || String((parameters as any)?.searchterm ?? (parameters as any)?.name ?? '');
+    return { toolName: 'searchMove', input: { searchterm, page } };
+  }
+  if (resource === 'ability') {
+    const searchterm = nameOrId || String((parameters as any)?.searchterm ?? (parameters as any)?.name ?? '');
+    return { toolName: 'searchAbility', input: { searchterm, page } };
+  }
+  if (resource === 'berry') {
+    // searchBerryTool uses `query` (not `searchterm` or `name`)
+    const query = nameOrId || String((parameters as any)?.query ?? (parameters as any)?.name ?? '');
+    return { toolName: 'searchBerry', input: { query, page } };
+  }
+  return null;
+}
 
 /**
  * Extracts and merges useful data from a single API response into the running useful-data string.
@@ -216,7 +268,8 @@ export async function executeIterativePlanner(
   requestContext: RequestContext,
   maxIterations: number = 50,
   referenceTask?: SavedTask | null,
-  onToolCall?: (info: unknown) => void
+  onToolCall?: (info: unknown) => void,
+  parentSpan?: LangfuseObservation
 ): Promise<any> {
   let currentPlanResponse = initialPlanResponse;
   let accumulatedResults: any[] = [];
@@ -560,11 +613,19 @@ export async function executeIterativePlanner(
 
             let apiResponse;
             try {
-              apiResponse = await apiService({
-                baseUrl: process.env.NEXT_PUBLIC_ELASTICDASH_API || '',
-                schema: apiSchema,
-                userToken
-              });
+              // Route through the named agentTool so Langfuse records each PokéAPI call
+              // as a child tool observation under the parent span.
+              const resolved = resolvePokeApiTool(stepToExecute.api.path, parametersToUse);
+              if (parentSpan && resolved && agentTools[resolved.toolName]) {
+                console.log(`📡 Calling agentTool "${resolved.toolName}" with Langfuse tracing`);
+                apiResponse = await agentTools[resolved.toolName].execute(resolved.input, parentSpan);
+              } else {
+                apiResponse = await apiService({
+                  baseUrl: process.env.NEXT_PUBLIC_POKEAPI_BASE_URL || 'https://pokeapi.co/api/v2',
+                  schema: apiSchema,
+                  userToken
+                });
+              }
             } catch (err: any) {
               console.warn(`⚠️  API call encountered an error (statusCode: ${err.statusCode}):`, err.message);
 
@@ -644,7 +705,7 @@ export async function executeIterativePlanner(
                 let singleResult;
                 try {
                   singleResult = await apiService({
-                    baseUrl: process.env.NEXT_PUBLIC_ELASTICDASH_API || '',
+                    baseUrl: process.env.NEXT_PUBLIC_POKEAPI_BASE_URL || 'https://pokeapi.co/api/v2',
                     schema: singleValueSchema,
                     userToken
                   });

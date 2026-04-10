@@ -1,5 +1,4 @@
-import { selectReferenceTask } from "@/services/taskSelectorService";
-import { fetchTaskList, SavedTask } from "@/services/taskService";
+import { SavedTask } from "@/services/taskService";
 import { openaiChatCompletion } from '@/utils/aiHandler';
 // import path from 'path';
 // import fs from 'fs';
@@ -202,40 +201,8 @@ IntentType: ["FETCH"/"MODIFY"]`;
   const entities = entitiesMatch ? entitiesMatch[1].split(',').map((e: any) => e.trim().replace(/['"]/g, '')) : [userInput];
   const intentType = intentTypeMatch ? intentTypeMatch[1].trim() as "FETCH" | "MODIFY" : "FETCH";
 
-  // Attempt to reuse a saved task as reference BEFORE first planner call
-  // Use refined intentType as key indicator for LLM to locate best matching task
-  let referenceTask: SavedTask | undefined;
-  try {
-    if (userToken) {
-      console.log(`\n🔍 Fetching saved tasks for reference matching (intent: ${intentType})...`);
-      const tasks = await fetchTaskList(userToken);
-      console.log('Fetched tasks: ', tasks);
-      // // Log fetched tasks to file (server-side only)
-      // try {
-      //   const logPath = path.join(process.cwd(), '.temp', 'tasks_fetched.txt');
-        
-      //   const timestamp = new Date().toISOString();
-      //   const logContent = `\n=== Tasks Fetched at ${timestamp} ===\n` +
-      //     `Total tasks: ${tasks.length}\n\n` +
-      //     JSON.stringify(tasks, null, 2) + '\n';
-        
-      //   await fs.writeFileSync(logPath, logContent);
-      //   console.log(`Logged fetched tasks to ${logPath}`);
-      // } catch (err) {
-      //   console.error('Failed to log tasks to file:', err);
-      // }
-      const match = await selectReferenceTask(refinedQuery, tasks, intentType);
-      console.log('Reference task matching result: ', match);
-      if (match.task && typeof match.score === 'number') {
-        referenceTask = match.task;
-        console.log(`📎 Reference task selected (id=${match.task.id}, name=${match.task.taskName}) with score=${match.score} (intent-aligned)`);
-      } else {
-        console.log('📎 No suitable reference task found (below threshold or intent mismatch).');
-      }
-    }
-  } catch (e) {
-    console.warn('Task reuse flow skipped due to error:', e instanceof Error ? e.message : e);
-  }
+  // Reference task reuse is disabled (no backend storage)
+  const referenceTask: SavedTask | undefined = undefined;
 
   console.log('✅ Query Refinement Result:', { refinedQuery, language, concepts, apiNeeds, entities, intentType, referenceTask });
 
