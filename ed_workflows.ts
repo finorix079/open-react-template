@@ -40,3 +40,6 @@ export const chatHandler = async (input: {
 
 export { chatStreamHandler } from './app/api/chat-stream/chatStreamHandler';
 export type { ChatStreamResult, ChatStreamInput } from './app/api/chat-stream/chatStreamHandler';
+
+export { streamingTest } from './app/api/streaming-test/streamingTest';
+export type { StreamingTestResult, StreamingTestInput } from './app/api/streaming-test/streamingTest';
