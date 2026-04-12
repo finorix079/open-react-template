@@ -24,6 +24,7 @@ import { NextRequest } from 'next/server';
 import { streamText } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { searchPokemon } from '@/ed_tools';
+import { edStartTrace } from '@/ed_workflows';
 import {
   writeMessageStart,
   writeTextDelta,
@@ -137,6 +138,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   // start() runs in a detached async context where ALS is null.
   const stream = new ReadableStream({
     async start(controller) {
+      await edStartTrace('streamingTest');
       await startActiveObservation('streamingTest', async (span: LangfuseSpan) => {
         let spanOutput: Record<string, unknown> = {};
 

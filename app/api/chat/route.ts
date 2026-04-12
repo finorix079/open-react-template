@@ -32,6 +32,7 @@ import { runPlannerWithInputs } from './plannerUtils';
 // Executor
 import { generateFinalAnswer, executeIterativePlanner } from './executor';
 import { queryRefinement } from '@/ed_tools';
+import { edStartTrace } from '@/ed_workflows';
 // setHttpRunContext is loaded via dynamic import inside the handler to avoid
 // a static reference to elasticdash-test which cannot be resolved by Turbopack
 // at build time (serverExternalPackages handles dynamic imports at runtime).
@@ -53,6 +54,8 @@ const chatHandlerWrapper = async (request: NextRequest) => {
       // elasticdash-test not available — proceed without dashboard context
     }
   }
+
+  await edStartTrace('chatHandler');
 
   // Create request-local context to prevent race conditions
 

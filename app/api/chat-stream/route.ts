@@ -18,6 +18,7 @@ import { NextRequest } from 'next/server';
 import { streamText } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { ChatStreamRequestSchema } from '@/schemas/ai';
+import { edStartTrace } from '@/ed_workflows';
 import { randomUUID } from 'crypto';
 import { handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
 import { plannerAgent } from '@/utils/aiHandler';
@@ -266,6 +267,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const stream = new ReadableStream({
     async start(controller) {
       const doWork = async () => {
+      await edStartTrace('chatStreamHandler');
       await startActiveObservation('chatStreamHandler', async (span: LangfuseSpan) => {
         /** Accumulated final output for Langfuse observation. */
         let spanOutput: Record<string, unknown> = {};

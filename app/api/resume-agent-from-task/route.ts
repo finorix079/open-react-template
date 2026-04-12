@@ -33,6 +33,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { startActiveObservation } from '@langfuse/tracing';
 import { LangfuseSpan } from '@langfuse/tracing';
+import { edStartTrace } from '@/ed_workflows';
 import {
   AgentState,
   resumeAgentFromTrace,
@@ -170,6 +171,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 400 },
     );
   }
+
+  await edStartTrace('resumeAgentFromTask');
 
   // Generate a new trace name following the lineage convention
   const baseId = agentState?.plan?.id ?? baseTraceId ?? 'agent';
