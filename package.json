@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack -p ${PORT:-3001}",
+    "dev": "node -r dotenv/config ./node_modules/.bin/next dev --turbopack",
     "build": "next build",
-    "start": "next start -p ${PORT:-3001}",
+    "start": "node -r dotenv/config ./node_modules/.bin/next start",
     "lint": "next lint",
     "test": "vitest run",
     "test:ai": "NODE_OPTIONS='--import tsx/esm' elasticdash test",
