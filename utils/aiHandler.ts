@@ -1,7 +1,7 @@
 // --- Agentic Tool Definitions ---
 import OpenAI from 'openai';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WrapAIFn = <T extends (...args: any[]) => any>(name: string, fn: T) => T;
+export type WrapAIFn = <T extends (...args: any[]) => any>(name: string, fn: T, options?: { model?: string; provider?: string }) => T;
 // Use the real wrapAI from elasticdash-test (supports AI mocking and auto-telemetry).
 // Falls back to a passthrough stub if the package is unavailable at runtime.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -593,11 +593,15 @@ export async function runAgenticFlow(rootSpan: LangfuseSpan, plan: AgentPlan): P
   return plan;
 }
 
-const sdk = new NodeSDK({
+try {
+  const sdk = new NodeSDK({
     spanProcessors: [new LangfuseSpanProcessor()],
-});
- 
-sdk.start();
+  });
+  sdk.start();
+} catch {
+  // Langfuse/OTel initialization may fail (e.g. missing env vars in subprocess) —
+  // non-fatal, tool functions still work without telemetry.
+}
 
 export const kimiChatCompletion = wrapAI('kimi-k2', async ({
 	messages,
@@ -644,7 +648,7 @@ export const kimiChatCompletion = wrapAI('kimi-k2', async ({
 			: (error as Error).message || 'Kimi OpenAI API error'
 		);
 	}
-});
+}, { model: 'kimi-k2-turbo-preview', provider: 'kimi' });
 
 /**
  * Calls the OpenAI Chat Completion API with the provided parameters.
@@ -697,7 +701,7 @@ export const openaiChatCompletionOriginal = wrapAI('gpt-4o', async ({
 			: (error as Error).message || 'OpenAI API error'
 		);
 	}
-});
+}, { model: 'gpt-4o', provider: 'openai' });
 
 export const openaiChatCompletion = openaiChatCompletionOriginal;
 

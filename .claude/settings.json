@@ -1,5 +1,8 @@
 {
   "permissions": {
-    "additionalDirectories": []
+    "additionalDirectories": [],
+    "allow": [
+      "Bash(npm view:*)"
+    ]
   }
 }
