@@ -53,6 +53,18 @@ jobs:
       - name: Install elasticdash-test
         run: npm install -g elasticdash-test
 
+      - name: Debug — verify secrets are set
+        run: |
+          echo "ELASTICDASH_API_URL is set: ${{ secrets.ELASTICDASH_API_URL != '' }}"
+          echo "ELASTICDASH_API_KEY is set: ${{ secrets.ELASTICDASH_API_KEY != '' }}"
+          echo "ELASTICDASH_API_URL length: ${#ELASTICDASH_API_URL}"
+          echo "ELASTICDASH_API_KEY length: ${#ELASTICDASH_API_KEY}"
+          echo "ELASTICDASH_API_URL prefix: ${ELASTICDASH_API_URL:0:10}..."
+          echo "ELASTICDASH_API_KEY prefix: ${ELASTICDASH_API_KEY:0:5}..."
+        env:
+          ELASTICDASH_API_URL: ${{ secrets.ELASTICDASH_API_URL }}
+          ELASTICDASH_API_KEY: ${{ secrets.ELASTICDASH_API_KEY }}
+
       - name: Run ElasticDash CI tests
         run: elasticdash ci
         env:
