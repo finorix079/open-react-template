@@ -51,7 +51,7 @@ jobs:
           node-version: 20
 
       - name: Install elasticdash-test
-        run: npm install -g elasticdash-test
+        run: npm install -g elasticdash-test@beta
 
       - name: Debug — verify secrets are set
         run: |
