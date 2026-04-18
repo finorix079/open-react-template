@@ -24,6 +24,7 @@ import { NextRequest } from 'next/server';
 import { streamText } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { searchPokemon } from '@/ed_tools';
+import { edStartTrace } from '@/ed_workflows';
 import {
   writeMessageStart,
   writeTextDelta,
@@ -36,6 +37,7 @@ import {
 import { randomUUID } from 'crypto';
 import { startActiveObservation } from '@langfuse/tracing';
 import type { LangfuseSpan, LangfuseTool } from '@langfuse/tracing';
+import { WrapAIFn } from '@/utils/aiHandler';
 
 // ---------------------------------------------------------------------------
 // wrapAI — loaded via eval('require') to bypass Turbopack static analysis.
@@ -44,8 +46,6 @@ import type { LangfuseSpan, LangfuseTool } from '@langfuse/tracing';
 // which means it may resolve to a different module instance with its own ALS.
 // This is Failure Mode 3 (module instance ALS split).
 // ---------------------------------------------------------------------------
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WrapAIFn = <T extends (...args: any[]) => any>(name: string, fn: T) => T;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let wrapAI: WrapAIFn = (_name: string, fn: any) => fn;
 try {
@@ -87,6 +87,7 @@ const anthropicFinalAnswer = wrapAI(
     const { outputTokens } = await usage;
     return { text, tokens: outputTokens ?? 0 };
   },
+  { model: 'claude-sonnet-4-5-20250929', provider: 'claude' },
 );
 
 // ---------------------------------------------------------------------------
@@ -137,6 +138,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   // start() runs in a detached async context where ALS is null.
   const stream = new ReadableStream({
     async start(controller) {
+      await edStartTrace('streamingTest');
       await startActiveObservation('streamingTest', async (span: LangfuseSpan) => {
         let spanOutput: Record<string, unknown> = {};
 

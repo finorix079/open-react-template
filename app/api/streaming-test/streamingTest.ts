@@ -12,8 +12,8 @@
  *   2. npx elasticdash dashboard — start the dashboard (port 4573)
  */
 
-import { readVercelAIStream, recordToolCall } from 'elasticdash-test';
-import type { VercelAIStreamResult } from 'elasticdash-test';
+import { readVercelAIStream, recordToolCall } from 'elasticdash-test/http';
+import type { VercelAIStreamResult } from 'elasticdash-test/http';
 
 const APP_URL = process.env.APP_URL ?? 'http://localhost:3001';
 

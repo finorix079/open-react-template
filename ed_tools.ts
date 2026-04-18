@@ -61,16 +61,28 @@ export const apiService = wrapTool('apiService', async (input: any) => {
 });
 
 export const queryRefinement = wrapTool('queryRefinement', async (input: any) => {
+    console.log('queryRefinement input:', input);
     const typedInput = input as { userInput: string; userToken?: string };
-    const res = await clarifyAndRefineUserInput(typedInput.userInput, typedInput.userToken) as any;
-    // Ensure array fields are always arrays — guards against old recorded snapshots
-    // where these fields may have been missing.
-    return {
-        ...res,
-        apiNeeds: Array.isArray(res?.apiNeeds) ? res.apiNeeds : [],
-        concepts: Array.isArray(res?.concepts) ? res.concepts : [],
-        entities: Array.isArray(res?.entities) ? res.entities : [],
-    };
+    try {
+        const res = await clarifyAndRefineUserInput(typedInput.userInput, typedInput.userToken)
+        .catch(error => {
+            console.error('Error in clarifyAndRefineUserInput:', error);
+            throw error;
+        });
+        console.log('queryRefinement output:', res);
+        // Ensure array fields are always arrays — guards against old recorded snapshots
+        // where these fields may have been missing.
+        return {
+            ...res,
+            apiNeeds: Array.isArray(res?.apiNeeds) ? res.apiNeeds : [],
+            concepts: Array.isArray(res?.concepts) ? res.concepts : [],
+            entities: Array.isArray(res?.entities) ? res.entities : [],
+        };
+    }
+    catch (error) {
+        console.error('Error in queryRefinement:', error);
+        throw error;
+    }
 });
 
 /**

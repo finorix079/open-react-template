@@ -15,6 +15,23 @@
 const APP_URL = process.env.APP_URL ?? 'http://localhost:3001';
 
 /**
+ * Ensures the observability context is initialised, then tags all subsequent
+ * elasticdash telemetry events with the given workflow name.
+ *
+ * `tryAutoInitHttpContext` must run first — without it `startTrace` throws
+ * because `getObservabilityContext()` returns undefined (the interceptors
+ * that normally trigger auto-init haven't fired yet at handler entry).
+ */
+export const edStartTrace = async (workflowName: string): Promise<void> => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ed = (eval('require') as (id: string) => any)('elasticdash-test');
+    await ed.tryAutoInitHttpContext();
+    ed.startTrace(workflowName);
+  } catch { /* elasticdash-test not available */ }
+};
+
+/**
  * Calls the live /api/chat endpoint on the running dev server.
  * Input must be JSON-serialisable; returns the parsed JSON response body.
  */

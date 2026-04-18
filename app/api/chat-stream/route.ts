@@ -18,9 +18,10 @@ import { NextRequest } from 'next/server';
 import { streamText } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { ChatStreamRequestSchema } from '@/schemas/ai';
+import { edStartTrace } from '@/ed_workflows';
 import { randomUUID } from 'crypto';
 import { handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
-import { plannerAgent } from '@/utils/aiHandler';
+import { plannerAgent, WrapAIFn } from '@/utils/aiHandler';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
 import { pendingPlans, generateSessionId } from '../chat/session';
 import { createSession, setApprovalStatus } from '@/services/conversationDb';
@@ -35,9 +36,6 @@ import { detectResolutionVsExecution } from '../chat/validators';
 import { runPlannerWithInputs } from '../chat/plannerUtils';
 import { executeIterativePlanner } from '../chat/executor';
 import { queryRefinement } from '@/ed_tools';
-import { agentTools } from '@/utils/aiHandler';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WrapAIFn = <T extends (...args: any[]) => any>(name: string, fn: T) => T;
 // Use the real wrapAI from elasticdash-test so anthropicFinalAnswer pushes telemetry.
 // eval('require') bypasses Turbopack's static analysis (which shows "Module not found"
 // for serverExternalPackages and replaces require with an error stub at runtime).
@@ -165,6 +163,7 @@ const anthropicFinalAnswer = wrapAI(
     const { outputTokens } = await usage;
     return { text, tokens: outputTokens ?? 0 };
   },
+  { model: 'claude-sonnet-4-5-20250929', provider: 'claude' },
 );
 
 /**
@@ -266,6 +265,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const stream = new ReadableStream({
     async start(controller) {
       const doWork = async () => {
+      await edStartTrace('chatStreamHandler');
       await startActiveObservation('chatStreamHandler', async (span: LangfuseSpan) => {
         /** Accumulated final output for Langfuse observation. */
         let spanOutput: Record<string, unknown> = {};

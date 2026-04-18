@@ -1,4 +1,4 @@
-# CI Pipeline — runs unit tests on PRs to master and pushes to master.
+# CI Pipeline — runs unit tests and ElasticDash AI tests on PRs to master and pushes to master.
 # See CICD.md for full documentation.
 
 name: CI
@@ -35,3 +35,33 @@ jobs:
 
       - name: Run unit tests
         run: pnpm test
+
+  elasticdash-ci:
+    name: ElasticDash AI Tests
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install elasticdash-test
+        run: npm install -g elasticdash-test
+
+      - name: Run ElasticDash CI tests
+        run: elasticdash ci
+        env:
+          ELASTICDASH_API_URL: ${{ secrets.ELASTICDASH_API_URL }}
+          ELASTICDASH_API_KEY: ${{ secrets.ELASTICDASH_API_KEY }}
+          # Add API keys for every AI provider your tests use.
+          # Missing keys cause tests targeting that provider to fail.
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
