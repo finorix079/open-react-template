@@ -111,7 +111,7 @@ jobs:
           KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
 
       - name: Run ElasticDash ed-test (fixture benchmarks)
-        run: NODE_OPTIONS='--import tsx/esm' elasticdash ed-test
+        run: NODE_OPTIONS='--import tsx/esm' elasticdash ed-test --runs 3
         env:
           APP_URL: http://localhost:3000
           ELASTICDASH_API_URL: ${{ secrets.ELASTICDASH_API_URL }}
