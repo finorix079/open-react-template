@@ -122,7 +122,7 @@ const chatHandlerWrapper = async (request: NextRequest) => {
   });
 };
 
-export async function chatHandler(
+async function chatHandler(
   {
     requestBody, 
     testCaseId, 

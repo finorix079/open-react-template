@@ -42,7 +42,7 @@ const PokemonDetailPage = () => {
     fetchPokemonDetails(Number(id))
       .then((data) => {
         if (data.success) {
-          const result = { ...data.result };
+          const result: any = { ...data.result };
           result.moves = (result.moves || []).map((move: any) => ({
             ...move,
             type: move.type || "Normal",

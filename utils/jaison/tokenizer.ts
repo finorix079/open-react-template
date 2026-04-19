@@ -128,7 +128,7 @@ function parseStringToken(jsonString: string, startPos: number): StringTokenResu
     const len = jsonString.length;
     const quoteChar = jsonString[startPos];
     let pos = startPos + 1;
-    let tokenValue: string;
+    let tokenValue: string = '';
     let foundEarlyTermination = false;
 
     while (pos < len) {
@@ -166,7 +166,7 @@ function parseStringToken(jsonString: string, startPos: number): StringTokenResu
 
     // Normalize single quotes to double quotes for JSON compatibility
     if (quoteChar === "'") {
-        const innerContent = tokenValue.slice(1, -1);
+        const innerContent = tokenValue.length > 2 ? tokenValue.slice(1, -1) : '';
 
         let escapedContent = '';
         for (let i = 0; i < innerContent.length; i++) {
