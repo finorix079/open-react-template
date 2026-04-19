@@ -11,19 +11,27 @@
  */
 
 import { defineTest } from 'elasticdash-test';
-import { chatStreamHandler } from './app/api/chat-stream/chatStreamHandler';
 
 const TRACE = './.ed_traces/2026-04-19T06-54-40_32b4.json';
+const APP_URL = process.env.APP_URL ?? 'http://localhost:3006';
 
-/** Invokes the chatStreamHandler with the same input as the recorded trace. */
+/** Invokes chatStreamHandler via HTTP against the running dev server. */
 const run = async () => {
-  await chatStreamHandler({
-    messages: [
-      { role: 'user', content: "What's the attack of Mewtwo" },
-      { role: 'assistant', content: 'Mewtwo has an attack stat of **110**.\n\n---\n\n**Steps taken:**\n\n1. **Fetch full details for Mewtwo to retrieve its attack stat**\n   `GET /pokemon/mewtwo`' },
-      { role: 'user', content: "What's the attack of Charizard?" },
-    ],
+  const response = await fetch(`${APP_URL}/api/chat-stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages: [
+        { role: 'user', content: "What's the attack of Mewtwo" },
+        { role: 'assistant', content: 'Mewtwo has an attack stat of **110**.\n\n---\n\n**Steps taken:**\n\n1. **Fetch full details for Mewtwo to retrieve its attack stat**\n   `GET /pokemon/mewtwo`' },
+        { role: 'user', content: "What's the attack of Charizard?" },
+      ],
+    }),
   });
+  if (!response.ok) {
+    throw new Error(`chatStreamHandler HTTP ${response.status}: ${await response.text()}`);
+  }
+  await response.text();
 };
 
 // ─── Query Refinement (ai_call_0) ────────────────────────────

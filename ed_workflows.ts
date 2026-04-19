@@ -90,8 +90,39 @@ export const chatHandler = async (input: {
   return response.json();
 };
 
-export { chatStreamHandler } from './app/api/chat-stream/chatStreamHandler';
-export type { ChatStreamResult, ChatStreamInput } from './app/api/chat-stream/chatStreamHandler';
+/**
+ * HTTP-mode chatStreamHandler for use in ed_tests and CI.
+ * Calls the running dev server at APP_URL/api/chat-stream via fetch,
+ * avoiding direct imports with @/ path aliases that fail outside Next.js.
+ */
+export const chatStreamHandler = async (input: {
+  messages: Array<{ role: string; content: string }>;
+  sessionId?: string;
+  userToken?: string;
+  [key: string]: unknown;
+}): Promise<unknown> => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (input.userToken) headers['Authorization'] = `Bearer ${input.userToken}`;
+
+  const response = await fetch(`${APP_URL}/api/chat-stream`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      messages: input.messages,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`chatStreamHandler HTTP ${response.status}: ${text}`);
+  }
+
+  // Return the raw response text since the stream format varies
+  return response.text();
+};
 
 export { streamingTest } from './app/api/streaming-test/streamingTest';
 export type { StreamingTestResult, StreamingTestInput } from './app/api/streaming-test/streamingTest';
