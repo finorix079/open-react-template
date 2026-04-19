@@ -26,18 +26,23 @@ The pipeline has two jobs: **Unit Tests** and **ElasticDash AI Tests**. The AI t
 Runs on `ubuntu-latest`:
 
 #### 1. Checkout Repository
+
 Uses `actions/checkout@v4` to clone the repository into the runner.
 
 #### 2. Install pnpm
+
 Uses `pnpm/action-setup@v4` which automatically reads the `packageManager` field in `package.json` to install the correct pnpm version.
 
 #### 3. Setup Node.js
+
 Uses `actions/setup-node@v4` with Node.js 20 and enables pnpm caching for faster subsequent runs.
 
 #### 4. Install Dependencies
+
 Runs `pnpm install --no-frozen-lockfile` to install project dependencies. The `--no-frozen-lockfile` flag is used because the `elasticdash-test` dependency references a local file path (`file:../elasticdash-test-js`) that does not exist in the CI environment.
 
 #### 5. Run Unit Tests
+
 Runs `pnpm test` which executes `vitest run` — running all `*.test.ts` files in the project.
 
 ### Job 2: ElasticDash AI Tests (`elasticdash-ci`)
@@ -45,16 +50,21 @@ Runs `pnpm test` which executes `vitest run` — running all `*.test.ts` files i
 Runs on `ubuntu-latest` **after unit tests pass** (`needs: test`):
 
 #### 1. Checkout Repository
+
 Uses `actions/checkout@v4` to clone the repository (needed for `ed_tools.ts` and `ed_workflows.ts`).
 
 #### 2. Setup Node.js
+
 Uses `actions/setup-node@v4` with Node.js 20.
 
 #### 3. Install elasticdash-test
+
 Installs the `elasticdash-test` CLI globally from npm.
 
 #### 4. Run ElasticDash CI Tests
+
 Runs `elasticdash ci` which:
+
 1. Fetches all active test groups from the ElasticDash backend using the project API key
 2. Executes each test locally (single-step or full-flow)
 3. Evaluates expectations (token budget, latency, output checks, LLM judge, etc.)
@@ -84,9 +94,11 @@ pnpm vitest
 
 1. Create a new file matching the pattern `*.test.ts` (e.g., `test/myFeature.test.ts`)
 2. Import from `vitest`:
+
    ```ts
    import { describe, it, expect } from "vitest";
    ```
+
 3. Write your test cases
 4. Run `pnpm test` locally to verify
 5. Push or open a PR — the CI pipeline will run your tests automatically

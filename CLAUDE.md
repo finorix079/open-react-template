@@ -153,7 +153,8 @@ On "resume" / "continue":
 * All new API routes go under `./services/`
 * Use `next/navigation` utilities in Next.js components
 * Shared utilities must be imported as:
-  ```
+
+  ```javascript
   import { fn } from "@/services/file"
   ```
 
@@ -171,13 +172,13 @@ On "resume" / "continue":
 
 ## OUTPUT REQUIREMENTS
 
-### For Every Task Step:
+### For Every Task Step
 
 * Provide full file content when creating or updating a file
 * Include code blocks with language annotation (e.g., ```ts)
 * Include test output or errors when tests are relevant
 
-### For Failure States:
+### For Failure States
 
 * Produce explicit failure reason
 * State exactly what input is missing
