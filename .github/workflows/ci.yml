@@ -45,33 +45,64 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: pnpm
 
-      - name: Install elasticdash-test
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Install elasticdash-test globally
         run: npm install -g elasticdash-test@beta
 
-      - name: Debug — verify secrets are set
-        run: |
-          echo "ELASTICDASH_API_URL is set: ${{ secrets.ELASTICDASH_API_URL != '' }}"
-          echo "ELASTICDASH_API_KEY is set: ${{ secrets.ELASTICDASH_API_KEY != '' }}"
-          echo "ELASTICDASH_API_URL length: ${#ELASTICDASH_API_URL}"
-          echo "ELASTICDASH_API_KEY length: ${#ELASTICDASH_API_KEY}"
-          echo "ELASTICDASH_API_URL prefix: ${ELASTICDASH_API_URL:0:10}..."
-          echo "ELASTICDASH_API_KEY prefix: ${ELASTICDASH_API_KEY:0:5}..."
+      - name: Build Next.js app
+        run: pnpm build
         env:
+          NEXT_PUBLIC_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          NEXT_PUBLIC_POKEMON_API: https://pokeapi.co
+          NEXT_PUBLIC_ELASTICDASH_API: ${{ secrets.ELASTICDASH_API_URL }}
+          NEXT_PUBLIC_ELASTICDASH_TOKEN: placeholder
+
+      - name: Start dev server
+        run: |
+          pnpm start &
+          # Wait for server to be ready
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:3000 > /dev/null 2>&1; then
+              echo "Server is ready"
+              break
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+        env:
+          PORT: 3000
+          APP_URL: http://localhost:3000
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+
+      - name: Run ElasticDash ed-test (fixture benchmarks)
+        run: elasticdash ed-test
+        env:
+          APP_URL: http://localhost:3000
           ELASTICDASH_API_URL: ${{ secrets.ELASTICDASH_API_URL }}
           ELASTICDASH_API_KEY: ${{ secrets.ELASTICDASH_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
 
-      - name: Run ElasticDash CI tests
+      - name: Run ElasticDash CI tests (server-defined)
         run: elasticdash ci
         env:
+          APP_URL: http://localhost:3000
           ELASTICDASH_API_URL: ${{ secrets.ELASTICDASH_API_URL }}
           ELASTICDASH_API_KEY: ${{ secrets.ELASTICDASH_API_KEY }}
-          # Add API keys for every AI provider your tests use.
-          # Missing keys cause tests targeting that provider to fail.
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
