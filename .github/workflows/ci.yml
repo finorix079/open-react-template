@@ -54,6 +54,29 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      - name: Verify required secrets
+        run: |
+          missing=()
+          # ElasticDash platform
+          [ -z "$ELASTICDASH_API_URL" ] && missing+=("ELASTICDASH_API_URL")
+          [ -z "$ELASTICDASH_API_KEY" ] && missing+=("ELASTICDASH_API_KEY")
+          # AI providers (required by the workflow)
+          [ -z "$OPENAI_API_KEY" ] && missing+=("OPENAI_API_KEY")
+          [ -z "$ANTHROPIC_API_KEY" ] && missing+=("ANTHROPIC_API_KEY")
+          [ -z "$KIMI_API_KEY" ] && missing+=("KIMI_API_KEY")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            echo "Add them in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          echo "All required secrets are set."
+        env:
+          ELASTICDASH_API_URL: ${{ secrets.ELASTICDASH_API_URL }}
+          ELASTICDASH_API_KEY: ${{ secrets.ELASTICDASH_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
