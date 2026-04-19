@@ -33,7 +33,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { startActiveObservation } from '@langfuse/tracing';
 import { LangfuseSpan } from '@langfuse/tracing';
-import { edStartTrace } from '@/ed_workflows';
+import { edStartTrace, edEndTrace } from '@/ed_workflows';
 import {
   AgentState,
   resumeAgentFromTrace,
@@ -221,6 +221,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: message }, { status: 500 });
       } finally {
         span.end();
+        edEndTrace();
       }
     },
   );
