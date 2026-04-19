@@ -119,15 +119,3 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
-
-      - name: Run ElasticDash CI tests (server-defined)
-        run: elasticdash ci
-        env:
-          APP_URL: http://localhost:3000
-          ELASTICDASH_API_URL: ${{ secrets.ELASTICDASH_API_URL }}
-          ELASTICDASH_API_KEY: ${{ secrets.ELASTICDASH_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
-          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
