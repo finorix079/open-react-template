@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  elasticdash-test: link:../elasticdash-test-js
+  elasticdash-test: 0.1.20-alpha-20
 
 importers:
 
@@ -54,8 +54,8 @@ importers:
         specifier: ^17.2.3
         version: 17.2.3
       elasticdash-test:
-        specifier: link:../elasticdash-test-js
-        version: link:../elasticdash-test-js
+        specifier: 0.1.20-alpha-20
+        version: 0.1.20-alpha-20
       next:
         specifier: ^15.5.15
         version: 15.5.15(@opentelemetry/api@1.9.1)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)

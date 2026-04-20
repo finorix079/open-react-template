@@ -15,6 +15,9 @@ const nextConfig = {
     '@langfuse/otel',
     '@langfuse/tracing',
     'elasticdash-test',
+    'elasticdash-test/http',
+    'elasticdash-test/observability',
+    'elasticdash-test/portal',
   ],
 };
 
