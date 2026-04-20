@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  elasticdash-test: 0.1.20-hotfix-2
+  elasticdash-test: 0.1.20-hotfix-4
 
 importers:
 
@@ -54,8 +54,8 @@ importers:
         specifier: ^17.2.3
         version: 17.2.3
       elasticdash-test:
-        specifier: 0.1.20-hotfix-2
-        version: 0.1.20-hotfix-2
+        specifier: 0.1.20-hotfix-4
+        version: 0.1.20-hotfix-4
       next:
         specifier: ^15.5.15
         version: 15.5.15(@opentelemetry/api@1.9.1)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -1366,8 +1366,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  elasticdash-test@0.1.20-hotfix-2:
-    resolution: {integrity: sha512-3QzP7jp4JeEeYTsByk513GMVw2lwHSjUvYrf/y17n7RdQZpacSk2D3zS6xwOVq/o5uVRtg3b6Ab468R9hHrUcA==}
+  elasticdash-test@0.1.20-hotfix-4:
+    resolution: {integrity: sha512-eh93ghDnmfWdORRUuzmyddJha/kHTIaiOsdJhUKXVXKQaD8DcwZ02zt3RT+Q3FQJ7z+oXZaHlHs9uhVPryZzCw==}
     engines: {node: '>=20.0.0'}
     hasBin: true
 
@@ -3678,7 +3678,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  elasticdash-test@0.1.20-hotfix-2:
+  elasticdash-test@0.1.20-hotfix-4:
     dependencies:
       chalk: 5.6.2
       chokidar: 5.0.0
