@@ -281,7 +281,7 @@ defineTest({
       { role: 'user', content: "What's the attack of Pikachu?" },
     ],
   },
-  run: async (input) => {
+  run: async (input?) => {
     const body = input as { messages: Array<{ role: string; content: string }> };
     const response = await fetch(`${APP_URL}/api/chat-stream`, {
       method: 'POST',
@@ -314,7 +314,7 @@ defineTest({
       ],
     };
   },
-  run: async (input) => {
+  run: async (input?) => {
     const body = input as { messages: Array<{ role: string; content: string }> };
     const response = await fetch(`${APP_URL}/api/chat-stream`, {
       method: 'POST',
@@ -345,7 +345,7 @@ defineTest({
       { role: 'user', content: "Tell me about Charizard's stats" },
     ],
   },
-  run: async (input) => {
+  run: async (input?) => {
     const body = input as { messages: Array<{ role: string; content: string }> };
     const response = await fetch(`${APP_URL}/api/chat-stream`, {
       method: 'POST',
@@ -383,7 +383,7 @@ defineTest({
       { role: 'user', content: "What's the attack of Pikachu?" },
     ],
   },
-  run: async (input) => {
+  run: async (input?) => {
     const body = input as { messages: Array<{ role: string; content: string }> };
     const response = await fetch(`${APP_URL}/api/chat-stream`, {
       method: 'POST',
@@ -412,7 +412,7 @@ defineTest({
       { role: 'user', content: "What's the defense of Snorlax?" },
     ],
   }),
-  run: async (input) => {
+  run: async (input?) => {
     const body = input as { messages: Array<{ role: string; content: string }> };
     const response = await fetch(`${APP_URL}/api/chat-stream`, {
       method: 'POST',
@@ -443,7 +443,7 @@ defineTest({
       { role: 'user', content: "What's the attack of Charizard?" },
     ],
   },
-  run: async (input) => {
+  run: async (input?) => {
     const body = input as { messages: Array<{ role: string; content: string }> };
     const response = await fetch(`${APP_URL}/api/chat-stream`, {
       method: 'POST',
