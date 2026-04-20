@@ -258,3 +258,269 @@ defineTest({
   benchmarks: { output_contains: 'NONEXISTENT_CLASSIFICATION_ZZZZZ' },
   run,
 });
+
+// ═══════════════════════════════════════════════════════════════
+// CUSTOM INPUT TESTS — SUCCESS EXAMPLES
+// Demonstrate overriding the trace's recorded input with static
+// values or dynamic async functions. Input is passed to run().
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Static custom input — asks about a different Pokémon while still
+ * replaying against the Charizard trace fixture. The benchmark
+ * validates the planner's recorded output (from the trace) is within
+ * budget, while the uploaded test result shows the custom input.
+ */
+defineTest({
+  name: 'custom_input_static_pikachu',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_3' },
+  benchmarks: { max_tokens_total: 5000 },
+  input: {
+    messages: [
+      { role: 'user', content: "What's the attack of Pikachu?" },
+    ],
+  },
+  run: async (input) => {
+    const body = input as { messages: Array<{ role: string; content: string }> };
+    const response = await fetch(`${APP_URL}/api/chat-stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    await response.text();
+  },
+});
+
+/**
+ * Dynamic custom input — resolves the prompt at runtime from an
+ * async function. Useful for sourcing prompts from databases, APIs,
+ * or environment variables.
+ */
+defineTest({
+  name: 'custom_input_dynamic_env',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_0' },
+  benchmarks: { max_duration_ms: 3000 },
+  input: async () => {
+    // Simulate fetching from an external source (e.g. prompt registry)
+    const pokemonName = process.env.TEST_POKEMON ?? 'Bulbasaur';
+    return {
+      messages: [
+        { role: 'user', content: `What's the attack of ${pokemonName}?` },
+      ],
+    };
+  },
+  run: async (input) => {
+    const body = input as { messages: Array<{ role: string; content: string }> };
+    const response = await fetch(`${APP_URL}/api/chat-stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    await response.text();
+  },
+});
+
+/**
+ * Custom input with output_contains — verifies the query refinement
+ * step's recorded output contains "charizard" (case-insensitive).
+ */
+defineTest({
+  name: 'custom_input_with_output_check',
+  trace: TRACE,
+  target: { type: 'tool_call', step_id: 'tool_call_0' },
+  benchmarks: {
+    max_duration_ms: 3000,
+    output_contains: 'charizard',
+  },
+  input: {
+    messages: [
+      { role: 'user', content: "Tell me about Charizard's stats" },
+    ],
+  },
+  run: async (input) => {
+    const body = input as { messages: Array<{ role: string; content: string }> };
+    const response = await fetch(`${APP_URL}/api/chat-stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    await response.text();
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════
+// CUSTOM INPUT TESTS — EXPECTED FAILURE EXAMPLES
+// These use custom inputs paired with benchmarks that will fail
+// against the recorded trace data.
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * [EXPECTED_FAIL] Custom input with wrong output assertion.
+ * Asks about Pikachu but the trace contains Charizard data —
+ * output_contains "pikachu" will fail because the recorded output
+ * is about Charizard.
+ */
+defineTest({
+  name: '[EXPECTED_FAIL] custom_input_wrong_pokemon_assertion',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_9' },
+  benchmarks: {
+    output_contains: 'pikachu',
+  },
+  input: {
+    messages: [
+      { role: 'user', content: "What's the attack of Pikachu?" },
+    ],
+  },
+  run: async (input) => {
+    const body = input as { messages: Array<{ role: string; content: string }> };
+    const response = await fetch(`${APP_URL}/api/chat-stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    await response.text();
+  },
+});
+
+/**
+ * [EXPECTED_FAIL] Custom input with impossibly tight token budget.
+ * The dynamic input resolves fine but the benchmark (1 token) is
+ * impossible against the recorded trace (2503 tokens).
+ */
+defineTest({
+  name: '[EXPECTED_FAIL] custom_input_dynamic_impossible_tokens',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_3' },
+  benchmarks: { max_tokens_total: 1 },
+  input: async () => ({
+    messages: [
+      { role: 'user', content: "What's the defense of Snorlax?" },
+    ],
+  }),
+  run: async (input) => {
+    const body = input as { messages: Array<{ role: string; content: string }> };
+    const response = await fetch(`${APP_URL}/api/chat-stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    await response.text();
+  },
+});
+
+/**
+ * [EXPECTED_FAIL] Custom input with output_not_contains failing.
+ * Asserts that the data extractor output does NOT contain "charizard",
+ * but it does (the trace is about Charizard).
+ */
+defineTest({
+  name: '[EXPECTED_FAIL] custom_input_forbidden_output',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_7' },
+  benchmarks: {
+    output_not_contains: 'charizard',
+  },
+  input: {
+    messages: [
+      { role: 'user', content: "What's the attack of Charizard?" },
+    ],
+  },
+  run: async (input) => {
+    const body = input as { messages: Array<{ role: string; content: string }> };
+    const response = await fetch(`${APP_URL}/api/chat-stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    await response.text();
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════
+// LLM-AS-A-JUDGE TESTS
+// These tests use the llm_judge benchmark to evaluate output quality.
+// Provider/model fall back to the user's evaluator config from the
+// ElasticDash backend if not specified here.
+// ═══════════════════════════════════════════════════════════════
+
+// Judge whether the planner correctly identifies fetching Charizard data
+defineTest({
+  name: '[LLM_JUDGE] planner_quality',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_3' },
+  benchmarks: {
+    llm_judge: {
+      judge_prompt:
+        'Does this execution plan correctly identify the need to fetch Charizard\'s data from a Pokémon API? Does it include a concrete API call like GET /pokemon/charizard?',
+      judge_score_threshold: 7,
+    },
+  },
+  run,
+});
+
+// Judge whether the data extractor correctly pulled the attack stat
+defineTest({
+  name: '[LLM_JUDGE] data_extractor_quality',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_7' },
+  benchmarks: {
+    llm_judge: {
+      judge_prompt:
+        'Does this data extraction correctly identify Charizard\'s attack stat (should be 84) from the raw API response? Is the extracted data well-structured and relevant?',
+      judge_score_threshold: 7,
+    },
+  },
+  run,
+});
+
+// Judge the final synthesized answer for correctness and clarity
+defineTest({
+  name: '[LLM_JUDGE] final_answer_quality',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_9' },
+  benchmarks: {
+    llm_judge: {
+      judge_prompt:
+        'Does this final answer correctly state Charizard\'s attack stat of 84? Is it presented clearly and helpfully to the user? Does it avoid hallucinated or incorrect information?',
+      judge_score_threshold: 7,
+    },
+  },
+  run,
+});
+
+// Judge with explicit provider override (uses local ANTHROPIC_API_KEY)
+defineTest({
+  name: '[LLM_JUDGE] intent_classifier_accuracy',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_4' },
+  benchmarks: {
+    llm_judge: {
+      judge_prompt:
+        'The user asked "What\'s the attack of Charizard?" after a prior resolved query about Mewtwo. Does the intent classification correctly identify this as a new data-retrieval request that requires API execution (not a follow-up that can be resolved from context)?',
+      judge_score_threshold: 7,
+      judge_provider: 'claude',
+    },
+  },
+  run,
+});
