@@ -54,14 +54,14 @@ importers:
         specifier: ^17.2.3
         version: 17.2.3
       elasticdash-test:
-        specifier: 0.1.20-alpha-20
-        version: 0.1.20-alpha-20
+        specifier: 0.1.20-alpha-21
+        version: 0.1.20-alpha-21
       next:
         specifier: ^15.5.15
         version: 15.5.15(@opentelemetry/api@1.9.1)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       openai:
         specifier: ^6.16.0
-        version: 6.22.0(zod@4.3.6)
+        version: 6.22.0(ws@8.18.3)(zod@4.3.6)
       react:
         specifier: 19.2.3
         version: 19.2.3
@@ -2101,6 +2101,18 @@ packages:
     resolution: {integrity: sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==}
     engines: {node: '>=10'}
 
+  ws@8.18.3:
+    resolution: {integrity: sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
     engines: {node: '>=0.4'}
@@ -3808,8 +3820,9 @@ snapshots:
 
   obug@2.1.1: {}
 
-  openai@6.22.0(zod@4.3.6):
+  openai@6.22.0(ws@8.18.3)(zod@4.3.6):
     optionalDependencies:
+      ws: 8.18.3
       zod: 4.3.6
 
   parse-entities@4.0.2:
@@ -4214,6 +4227,9 @@ snapshots:
       ansi-styles: 4.3.0
       string-width: 4.2.3
       strip-ansi: 6.0.1
+
+  ws@8.18.3:
+    optional: true
 
   xtend@4.0.2: {}
 
