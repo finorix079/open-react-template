@@ -18,7 +18,7 @@ import { NextRequest } from 'next/server';
 import { streamText } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { ChatStreamRequestSchema } from '@/schemas/ai';
-import { edStartTrace } from '@/ed_workflows';
+import { edStartTrace, edEndTrace } from '@/ed_workflows';
 import { randomUUID } from 'crypto';
 import { handleQueryConceptsAndNeeds } from '@/utils/queryRefinement';
 import { plannerAgent, WrapAIFn } from '@/utils/aiHandler';
@@ -711,6 +711,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           try { controller.close(); } catch { /* already closed */ }
         } finally {
           span.update({ output: spanOutput }).end();
+          edEndTrace();
         }
       }); // end startActiveObservation
       }; // end doWork

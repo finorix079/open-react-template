@@ -1,4 +1,5 @@
 import { dynamicApiRequest } from "./services/apiService";
+import { setElasticDashModule } from "@/ed_workflows";
 import {
   fetchPokemonDetailsTool,
   searchAbilityTool,
@@ -18,9 +19,14 @@ try {
   // for serverExternalPackages entries and replaces require() with an error stub at runtime.
   // Node.js resolves elasticdash-test natively via the CJS export (dist/index.cjs).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  wrapTool = (eval('require') as (id: string) => any)('elasticdash-test').wrapTool ?? wrapTool;
-} catch {
-  // Not in elasticdash context — passthrough stub remains active
+  const _edModule = (eval('require') as (id: string) => any)('elasticdash-test');
+  wrapTool = _edModule.wrapTool ?? wrapTool;
+  // Share the CJS module instance with ed_workflows.ts so startTrace/endTrace
+  // use the same ALS stores as wrapTool/wrapAI.
+  setElasticDashModule(_edModule);
+  console.log('[ed_tools] elasticdash-test loaded, setElasticDashModule called');
+} catch (err) {
+  console.error('[ed_tools] Failed to load elasticdash-test:', err);
 }
 
 // export const checkApprovalStatus = wrapTool('checkApprovalStatus', async (input: any) => {

@@ -45,23 +45,77 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: pnpm
 
-      - name: Install elasticdash-test
-        run: npm install -g elasticdash-test
-
-      - name: Run ElasticDash CI tests
-        run: elasticdash ci
+      - name: Verify required secrets
+        run: |
+          missing=()
+          # ElasticDash platform
+          [ -z "$ELASTICDASH_API_URL" ] && missing+=("ELASTICDASH_API_URL")
+          [ -z "$ELASTICDASH_API_KEY" ] && missing+=("ELASTICDASH_API_KEY")
+          # AI providers (required by the workflow)
+          [ -z "$OPENAI_API_KEY" ] && missing+=("OPENAI_API_KEY")
+          [ -z "$ANTHROPIC_API_KEY" ] && missing+=("ANTHROPIC_API_KEY")
+          [ -z "$KIMI_API_KEY" ] && missing+=("KIMI_API_KEY")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            echo "Add them in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          echo "All required secrets are set."
         env:
           ELASTICDASH_API_URL: ${{ secrets.ELASTICDASH_API_URL }}
           ELASTICDASH_API_KEY: ${{ secrets.ELASTICDASH_API_KEY }}
-          # Add API keys for every AI provider your tests use.
-          # Missing keys cause tests targeting that provider to fail.
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Install elasticdash-test globally
+        run: npm install -g elasticdash-test@beta
+
+      - name: Build Next.js app
+        run: pnpm build
+        env:
+          NEXT_PUBLIC_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          NEXT_PUBLIC_POKEMON_API: https://pokeapi.co
+          NEXT_PUBLIC_ELASTICDASH_API: ${{ secrets.ELASTICDASH_API_URL }}
+          NEXT_PUBLIC_ELASTICDASH_TOKEN: placeholder
+
+      - name: Start dev server
+        run: |
+          node -r dotenv/config ./node_modules/next/dist/bin/next start &
+          # Wait for server to be ready
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:3000 > /dev/null 2>&1; then
+              echo "Server is ready"
+              break
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+        env:
+          PORT: 3000
+          APP_URL: http://localhost:3000
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+
+      - name: Run ElasticDash ed-test (fixture benchmarks)
+        run: NODE_OPTIONS='--import tsx/esm' elasticdash ed-test --runs 3
+        env:
+          APP_URL: http://localhost:3000
+          ELASTICDASH_API_URL: ${{ secrets.ELASTICDASH_API_URL }}
+          ELASTICDASH_API_KEY: ${{ secrets.ELASTICDASH_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}

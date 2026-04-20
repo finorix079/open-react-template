@@ -24,7 +24,7 @@ import { NextRequest } from 'next/server';
 import { streamText } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { searchPokemon } from '@/ed_tools';
-import { edStartTrace } from '@/ed_workflows';
+import { edStartTrace, edEndTrace } from '@/ed_workflows';
 import {
   writeMessageStart,
   writeTextDelta,
@@ -245,6 +245,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           try { controller.close(); } catch { /* already closed */ }
         } finally {
           span.update({ input: { query, messages }, output: spanOutput }).end();
+          edEndTrace();
         }
       }); // end startActiveObservation
     },

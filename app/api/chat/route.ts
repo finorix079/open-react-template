@@ -32,7 +32,7 @@ import { runPlannerWithInputs } from './plannerUtils';
 // Executor
 import { generateFinalAnswer, executeIterativePlanner } from './executor';
 import { queryRefinement } from '@/ed_tools';
-import { edStartTrace } from '@/ed_workflows';
+import { edStartTrace, edEndTrace } from '@/ed_workflows';
 // setHttpRunContext is loaded via dynamic import inside the handler to avoid
 // a static reference to elasticdash-test which cannot be resolved by Turbopack
 // at build time (serverExternalPackages handles dynamic imports at runtime).
@@ -122,7 +122,7 @@ const chatHandlerWrapper = async (request: NextRequest) => {
   });
 };
 
-export async function chatHandler(
+async function chatHandler(
   {
     requestBody, 
     testCaseId, 
@@ -750,6 +750,7 @@ export async function chatHandler(
         output: output
       })
       .end();
+      edEndTrace();
 
       // return NextResponse.json(output);
       return output;

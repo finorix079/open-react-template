@@ -26,7 +26,7 @@ const PokemonPageContent = () => {
     searchPokemon({ searchterm: "", page: 0 })
       .then((data) => {
         console.log("Fetched Pokémon data:", data);
-        let pokemonList = [];
+        let pokemonList: any[] = [];
         let totalPages = 1;
         if (data.success) {
           pokemonList = data.result.results;
@@ -67,7 +67,7 @@ const PokemonPageContent = () => {
     try {
       setLastSearch(search);
       const data = await searchPokemon({ searchterm: search, page: 0 });
-      let pokemonList = [];
+      let pokemonList: any[] = [];
       let totalPages = 1;
       if (data.success) {
         pokemonList = data.result.results;
@@ -85,7 +85,7 @@ const PokemonPageContent = () => {
     updateUrl(lastSearch || "", newPage);
     try {
       const data = await searchPokemon({ searchterm: lastSearch || "", page: newPage });
-      let pokemonList = [];
+      let pokemonList: any[] = [];
       if (data.success) {
         pokemonList = data.result.results;
       }
