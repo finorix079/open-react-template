@@ -1367,7 +1367,7 @@ packages:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
   elasticdash-test@0.1.20-hotfix-4:
-    resolution: {integrity: sha512-eh93ghDnmfWdORRUuzmyddJha/kHTIaiOsdJhUKXVXKQaD8DcwZ02zt3RT+Q3FQJ7z+oXZaHlHs9uhVPryZzCw==}
+    resolution: {integrity: sha512-oIon9QuEmqM5azZxKkYqVZsL30EEJF19donjR3EhEuoHDB92l+hT2cC9YsGaWUArzkj/nBgcWxW9TQS8zLvIPA==}
     engines: {node: '>=20.0.0'}
     hasBin: true
 
