@@ -207,3 +207,124 @@ defineTest({
   benchmarks: { max_tokens_total: 500 },
   run,
 });
+
+// ═══════════════════════════════════════════════════════════════
+// INTENTIONALLY FAILING TESTS
+// These tests use impossibly tight thresholds to guarantee failure.
+// They verify that the ed-test framework correctly reports failures.
+// ═══════════════════════════════════════════════════════════════
+
+// Impossible latency: 1ms is unreachable for any LLM call (recorded: 852ms)
+defineTest({
+  name: '[EXPECTED_FAIL] query_refinement_impossible_latency',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_0' },
+  benchmarks: { max_duration_ms: 1 },
+  run,
+});
+
+// Impossible token budget: 1 token is unreachable for planner output (recorded: 2503 tokens)
+defineTest({
+  name: '[EXPECTED_FAIL] planner_impossible_tokens',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_3' },
+  benchmarks: { max_tokens_total: 1 },
+  run,
+});
+
+// Impossible latency for final synthesizer (recorded: 2583ms)
+defineTest({
+  name: '[EXPECTED_FAIL] final_synthesizer_impossible_latency',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_9' },
+  benchmarks: { max_duration_ms: 1 },
+  run,
+});
+
+// Both duration and token budgets set impossibly tight
+defineTest({
+  name: '[EXPECTED_FAIL] data_extractor_impossible_both',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_7' },
+  benchmarks: { max_duration_ms: 1, max_tokens_total: 1 },
+  run,
+});
+
+// Output contains a term that won't be in the intent classifier output
+defineTest({
+  name: '[EXPECTED_FAIL] intent_classifier_wrong_output',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_4' },
+  benchmarks: { output_contains: 'NONEXISTENT_CLASSIFICATION_ZZZZZ' },
+  run,
+});
+
+// ═══════════════════════════════════════════════════════════════
+// LLM-AS-A-JUDGE TESTS
+// These tests use the llm_judge benchmark to evaluate output quality.
+// Requires an LLM API key (OPENAI_API_KEY by default) at test time.
+// ═══════════════════════════════════════════════════════════════
+
+// Judge whether the planner correctly identifies fetching Charizard data
+defineTest({
+  name: '[LLM_JUDGE] planner_quality',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_3' },
+  benchmarks: {
+    llm_judge: {
+      judge_prompt:
+        'Does this execution plan correctly identify the need to fetch Charizard\'s data from a Pokémon API? Does it include a concrete API call like GET /pokemon/charizard?',
+      judge_score_threshold: 7,
+      judge_provider: 'openai',
+    },
+  },
+  run,
+});
+
+// Judge whether the data extractor correctly pulled the attack stat
+defineTest({
+  name: '[LLM_JUDGE] data_extractor_quality',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_7' },
+  benchmarks: {
+    llm_judge: {
+      judge_prompt:
+        'Does this data extraction correctly identify Charizard\'s attack stat (should be 84) from the raw API response? Is the extracted data well-structured and relevant?',
+      judge_score_threshold: 7,
+      judge_provider: 'openai',
+    },
+  },
+  run,
+});
+
+// Judge the final synthesized answer for correctness and clarity
+defineTest({
+  name: '[LLM_JUDGE] final_answer_quality',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_9' },
+  benchmarks: {
+    llm_judge: {
+      judge_prompt:
+        'Does this final answer correctly state Charizard\'s attack stat of 84? Is it presented clearly and helpfully to the user? Does it avoid hallucinated or incorrect information?',
+      judge_score_threshold: 7,
+      judge_provider: 'openai',
+    },
+  },
+  run,
+});
+
+// Judge intent classification accuracy
+defineTest({
+  name: '[LLM_JUDGE] intent_classifier_accuracy',
+  trace: TRACE,
+  target: { type: 'ai_call', step_id: 'ai_call_4' },
+  benchmarks: {
+    llm_judge: {
+      judge_prompt:
+        'The user asked "What\'s the attack of Charizard?" after a prior resolved query about Mewtwo. Does the intent classification correctly identify this as a new data-retrieval request that requires API execution (not a follow-up that can be resolved from context)?',
+      judge_score_threshold: 7,
+      judge_provider: 'openai',
+    },
+  },
+  run,
+});

@@ -1,0 +1,2 @@
+overrides:
+  elasticdash-test: link:../elasticdash-test-js
