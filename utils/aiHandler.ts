@@ -1,5 +1,7 @@
 // --- Agentic Tool Definitions ---
 import OpenAI from 'openai';
+import { generateText } from 'ai';
+import { createAnthropic } from '@ai-sdk/anthropic';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type WrapAIFn = <T extends (...args: any[]) => any>(name: string, fn: T, options?: { model?: string; provider?: string }) => T;
 // Use the real wrapAI from elasticdash-test (supports AI mocking and auto-telemetry).
@@ -703,6 +705,66 @@ export const openaiChatCompletionOriginal = wrapAI('gpt-4o', async ({
 	}
 }, { model: 'gpt-4o', provider: 'openai' });
 
-export const openaiChatCompletion = openaiChatCompletionOriginal;
+/**
+ * Calls the Anthropic Claude API via the Vercel AI SDK with the same
+ * interface as openaiChatCompletionOriginal. Uses Claude Sonnet 4.5.
+ *
+ * @param messages - Array of chat messages
+ * @param model - Model name (default: claude-sonnet-4-5-20250929)
+ * @param temperature - Sampling temperature (default: 0.0)
+ * @param max_tokens - Maximum tokens in response (default: 256)
+ * @param systemPrompt - Optional system prompt to prepend
+ * @param sessionId - Session ID (unused for Anthropic, kept for interface compatibility)
+ * @returns The trimmed content of the response
+ * @throws Error if the Anthropic API call fails
+ */
+export const anthropicChatCompletion = wrapAI('claude-sonnet-4-5', async ({
+	messages,
+	model = 'claude-sonnet-4-5-20250929',
+	temperature = 0.0,
+	max_tokens = 256,
+	systemPrompt = '',
+	sessionId: _sessionId,
+}: {
+	messages: ChatCompletionMessageParam[];
+	model?: string;
+	temperature?: number;
+	max_tokens?: number;
+	systemPrompt?: string;
+	sessionId?: string;
+}) => {
+	void _sessionId; // kept for interface compatibility with openaiChatCompletion
+	const apiKey = process.env.ANTHROPIC_API_KEY;
+	if (!apiKey) {
+		throw new Error('ANTHROPIC_API_KEY is not configured');
+	}
+	const provider = createAnthropic({ apiKey });
+	const chatMessages = systemPrompt
+		? [{ role: 'system' as const, content: systemPrompt }, ...messages.map(m => ({ role: m.role as 'user' | 'assistant' | 'system', content: typeof m.content === 'string' ? m.content : '' }))]
+		: messages.map(m => ({ role: m.role as 'user' | 'assistant' | 'system', content: typeof m.content === 'string' ? m.content : '' }));
+
+	try {
+		const result = await generateText({
+			model: provider(model),
+			messages: chatMessages,
+			temperature,
+			maxOutputTokens: max_tokens,
+		});
+		return result.text.trim();
+	} catch (error: unknown) {
+		console.error('Error in anthropicChatCompletion:', error);
+		throw new Error(
+			error instanceof Error ? error.message : 'Anthropic API error'
+		);
+	}
+}, { model: 'claude-sonnet-4-5-20250929', provider: 'anthropic' });
+
+/**
+ * Dispatches to openaiChatCompletionOriginal or anthropicChatCompletion
+ * based on the AI_PROVIDER env var. Defaults to 'openai' if not set.
+ */
+export const openaiChatCompletion = process.env.AI_PROVIDER === 'anthropic'
+	? anthropicChatCompletion
+	: openaiChatCompletionOriginal;
 
 // Agentic flow orchestration logic is now available for extension

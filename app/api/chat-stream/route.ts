@@ -214,8 +214,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   const edRunId = request.headers.get('x-elasticdash-run-id');
   const edServer = request.headers.get('x-elasticdash-server');
 
-  const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey) {
+  const aiProvider = process.env.AI_PROVIDER || 'openai';
+
+  const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY ?? '';
+  if (aiProvider === 'openai' && !apiKey) {
     return new Response(JSON.stringify({ error: 'OpenAI API key not configured' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
