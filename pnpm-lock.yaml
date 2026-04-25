@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  elasticdash-test: 0.1.20-alpha-24
+  elasticdash-test: 0.1.22
 
 importers:
 
@@ -54,8 +54,8 @@ importers:
         specifier: ^17.2.3
         version: 17.2.3
       elasticdash-test:
-        specifier: 0.1.20-alpha-24
-        version: 0.1.20-alpha-24
+        specifier: 0.1.22
+        version: 0.1.22
       next:
         specifier: ^15.5.15
         version: 15.5.15(@opentelemetry/api@1.9.1)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -1366,8 +1366,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  elasticdash-test@0.1.20-alpha-24:
-    resolution: {integrity: sha512-Y/VMW7Gizudl1cnwE/PhqZgvlxJiDLztz1CIo52tVuF5BtmCNHC2GlMGuYeLYpz5FFp6TitkUApo/H23Y8bBEg==}
+  elasticdash-test@0.1.22:
+    resolution: {integrity: sha512-NruklfyuxLqVP3EfqIydcSvAvkjbakRhelE6LZjT0U+iua34hsE5CtDecU5FMaLhBK3mbNMclE69rfSEJFKX9Q==}
     engines: {node: '>=20.0.0'}
     hasBin: true
 
@@ -3678,7 +3678,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  elasticdash-test@0.1.20-alpha-24:
+  elasticdash-test@0.1.22:
     dependencies:
       chalk: 5.6.2
       chokidar: 5.0.0
