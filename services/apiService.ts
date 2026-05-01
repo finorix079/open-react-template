@@ -18,26 +18,12 @@ export interface FanOutRequest {
  *
  * @param {string} baseUrl - The base URL of the API.
  * @param {object} schema - The API schema containing path, method, and requestBody details.
- * @param {string} userToken - Optional user authentication token (Bearer token).
  * @returns {Promise<any | FanOutRequest>} - The API response, or FanOutRequest if fan-out is needed.
  */
-export async function dynamicApiRequest(baseUrl: string, schema: any, userToken?: string): Promise<any> {
+export async function dynamicApiRequest(baseUrl: string, schema: any): Promise<any> {
   try {
     console.log('Dynamic API Request Schema:', schema);
     const { path, method, requestBody, parameters, input } = schema;
-
-    // Use user token if provided, otherwise fall back to environment token
-    // Ensure token has "Bearer " prefix
-    let token = '';
-    if (userToken) {
-      token = userToken.startsWith('Bearer ') ? userToken : `Bearer ${userToken}`;
-      console.log('Using user token from localStorage for API authentication');
-    } else if (process.env.NEXT_PUBLIC_ELASTICDASH_TOKEN) {
-      token = `Bearer ${process.env.NEXT_PUBLIC_ELASTICDASH_TOKEN}`;
-      console.log('Using environment token for API authentication (no user token provided)');
-    } else {
-      console.log('No authentication token available');
-    }
 
     // ==================== 参数映射 ====================
     // 将模型提供的参数（可能 key 不匹配）映射到 API 要求的参数
@@ -119,8 +105,8 @@ export async function dynamicApiRequest(baseUrl: string, schema: any, userToken?
       data: requestBody ? requestBody : undefined,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token
       },
+      withCredentials: true,
     };
 
     console.log('Dynamic API Request Config:', JSON.stringify(config, null, 2))
