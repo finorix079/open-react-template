@@ -1,4 +1,5 @@
 import { cosineSimilarity } from '@/src/utils/cosineSimilarity';
+import { callLLM } from './llmService';
 import fs from 'fs';
 import path from 'path';
 
@@ -81,13 +82,16 @@ export async function getAllMatchedApis({
   const allMatchedApis = new Map();
   console.log(`🔎 Retrieval mode decision: intentType=${intentType}, always including TABLE/SQL for reads; adding API matches for MODIFY.`);
 
+  // Embeddings require OpenAI API key (Anthropic has no embedding API)
+  const embeddingApiKey = process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
+
   for (const entity of entities) {
     console.log(`\n--- Embedding search for entity: "${entity}" ---`);
     const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${embeddingApiKey}`,
       },
       body: JSON.stringify({
         model: 'text-embedding-ada-002',
@@ -418,24 +422,17 @@ export async function resolvePlaceholders(
   console.log(`\n📋 RESOLVING PLACEHOLDER: resolved_from_step_${placeholderStepNum}`);
   console.log(`   Referenced step response:`, JSON.stringify(referencedStep.response, null, 2));
 
-  const apiKey_local = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+  const apiKey_local = process.env.ANTHROPIC_API_KEY;
   if (!apiKey_local) {
-    return { resolved: false, reason: 'OpenAI API key not configured' };
+    return { resolved: false, reason: 'Anthropic API key not configured' };
   }
 
   try {
-    const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey_local}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a data extraction expert. Given a previous API response and the current step's requirements, extract the correct value to replace a "resolved_from_step_X" placeholder.
+    const extractedValue = (await callLLM({
+      messages: [
+        {
+          role: 'system',
+          content: `You are a data extraction expert. Given a previous API response and the current step's requirements, extract the correct value to replace a "resolved_from_step_X" placeholder.
 
 RULES:
 1. Analyze the current step's API call to understand what value is needed
@@ -457,21 +454,12 @@ Previous Step (Step ${placeholderStepNum}) Response:
 ${JSON.stringify(referencedStep.response, null, 2)}
 
 What value should replace "resolved_from_step_${placeholderStepNum}"? Return ONLY the value:`,
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 100,
-      }),
-    });
-
-    if (!llmResponse.ok) {
-      const errorText = await llmResponse.text();
-      console.error('LLM extraction failed:', errorText);
-      return { resolved: false, reason: `LLM extraction failed: ${errorText}` };
-    }
-
-    const data = await llmResponse.json();
-    const extractedValue = data.choices[0]?.message?.content?.trim();
+        },
+      ],
+      apiKey: apiKey_local,
+      temperature: 0.2,
+      maxTokens: 100,
+    })).trim();
 
     console.log(`✅ LLM extracted value: "${extractedValue}"`);
 

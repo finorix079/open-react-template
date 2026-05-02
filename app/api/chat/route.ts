@@ -6,6 +6,8 @@ import { clarifyAndRefineUserInput, handleQueryConceptsAndNeeds } from '@/utils/
 import { SavedTask } from '@/services/taskService';
 import { sendToPlanner } from './planner';
 import { getAllMatchedApis, getTopKResults, Message, RequestContext } from '@/services/chatPlannerService';
+import { callLLM } from '@/services/llmService';
+import { runSelectQuery } from '@/services/dataService';
 
 // In-memory plan storage for approval workflow
 // Key: sessionId (generated from user conversation hash)
@@ -68,18 +70,11 @@ async function detectResolutionVsExecution(
   apiKey: string
 ): Promise<'resolution' | 'execution'> {
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a query intent classifier.
+    const intentText = await callLLM({
+      messages: [
+        {
+          role: 'system',
+          content: `You are a query intent classifier.
 
 RESOLUTION queries are those that:
 - Check, verify, or confirm the current state
@@ -95,28 +90,22 @@ EXECUTION queries are those that:
 - Examples: "Clear the watchlist", "Delete this item", "Add to team"
 
 Respond with ONLY ONE WORD: either "resolution" or "execution"`,
-          },
-          {
-            role: 'user',
-            content: `Query: ${refinedQuery}
+        },
+        {
+          role: 'user',
+          content: `Query: ${refinedQuery}
 
 Execution Plan: ${JSON.stringify(executionPlan, null, 2)}
 
 Intent:`,
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: 10,
-      }),
+        },
+      ],
+      apiKey,
+      temperature: 0.1,
+      maxTokens: 10,
     });
 
-    if (!response.ok) {
-      console.warn('Resolution detection failed, defaulting to execution');
-      return 'execution';
-    }
-
-    const data = await response.json();
-    const intent = data.choices[0]?.message?.content?.trim().toLowerCase();
+    const intent = intentText.trim().toLowerCase();
 
     console.log(`🔍 Detected intent: ${intent} for query: "${refinedQuery}"`);
 
@@ -219,18 +208,11 @@ async function summarizeMessage(message: Message, apiKey: string): Promise<Messa
   }
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a message summarizer that extracts ONLY critical information from conversation messages.
+    const summarized = await callLLM({
+      messages: [
+        {
+          role: 'system',
+          content: `You are a message summarizer that extracts ONLY critical information from conversation messages.
 
 CRITICAL RULES - NO DATA LOSS PERMITTED:
 1. Preserve ALL numbers, IDs, quantities, counts, statistics (e.g., "125 moves", "ID: 25", "3 Pokémon")
@@ -271,25 +253,20 @@ Input: "add pikachu to my team"
 Output: "add pikachu to my team" (keep short messages as-is)
 
 Now summarize this message:`,
-          },
-          {
-            role: 'user',
-            content: message.content,
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: 1024,
-      }),
+        },
+        {
+          role: 'user',
+          content: message.content,
+        },
+      ],
+      apiKey,
+      temperature: 0.1,
+      maxTokens: 1024,
     });
 
-    if (response.ok) {
-      const data = await response.json();
-      const summarized = data.choices[0]?.message?.content?.trim();
-      
-      if (summarized && summarized.length < message.content.length) {
-        console.log(`📝 Summarized message: ${message.content.length} → ${summarized.length} chars (${Math.round((1 - summarized.length/message.content.length) * 100)}% reduction)`);
-        return { ...message, content: summarized };
-      }
+    if (summarized && summarized.length < message.content.length) {
+      console.log(`📝 Summarized message: ${message.content.length} → ${summarized.length} chars (${Math.round((1 - summarized.length/message.content.length) * 100)}% reduction)`);
+      return { ...message, content: summarized };
     }
   } catch (error) {
     console.warn('Message summarization failed:', error);
@@ -604,28 +581,14 @@ IMPORTANT RULES:
 Output:`;
 
     // Call LLM for table selection
-    const tableSelectionRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: tableSelectionPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 1024,
-      }),
+    let tableSelectionText = await callLLM({
+      messages: [
+        { role: 'system', content: tableSelectionPrompt },
+      ],
+      apiKey,
+      temperature: 0.3,
+      maxTokens: 1024,
     });
-    
-    if (!tableSelectionRes.ok) {
-      throw new Error('Failed to select tables');
-    }
-    
-    const tableSelectionData = await tableSelectionRes.json();
-    let tableSelectionText = tableSelectionData.choices[0]?.message?.content?.trim() || '';
     
     // Parse table selection response
     const jsonMatch = tableSelectionText.match(/\{[\s\S]*\}/);
@@ -679,28 +642,14 @@ Generate ONLY the SQL query (no explanations):
 SQL:`;
     
     // Call LLM for SQL generation
-    const sqlGenRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: sqlPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 512,
-      }),
+    let sqlText = await callLLM({
+      messages: [
+        { role: 'system', content: sqlPrompt },
+      ],
+      apiKey,
+      temperature: 0.3,
+      maxTokens: 512,
     });
-    
-    if (!sqlGenRes.ok) {
-      throw new Error('Failed to generate SQL');
-    }
-    
-    const sqlGenData = await sqlGenRes.json();
-    let sqlText = sqlGenData.choices[0]?.message?.content?.trim() || '';
     
     // Extract SQL statement
     const sqlMatch = sqlText.match(/select[\s\S]+?;/i);
@@ -929,24 +878,17 @@ async function resolvePlaceholders(
   console.log(`   Referenced step response:`, JSON.stringify(referencedStep.response, null, 2));
   
   // Extract the appropriate data from the referenced step's response
-  const apiKey_local = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+  const apiKey_local = process.env.ANTHROPIC_API_KEY;
   if (!apiKey_local) {
-    return { resolved: false, reason: 'OpenAI API key not configured' };
+    return { resolved: false, reason: 'Anthropic API key not configured' };
   }
-  
+
   try {
-    const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey_local}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a data extraction expert. Given a previous API response and the current step's requirements, extract the correct value to replace a "resolved_from_step_X" placeholder.
+    const extractedValue = (await callLLM({
+      messages: [
+        {
+          role: 'system',
+          content: `You are a data extraction expert. Given a previous API response and the current step's requirements, extract the correct value to replace a "resolved_from_step_X" placeholder.
 
 RULES:
 1. Analyze the current step's API call to understand what value is needed
@@ -968,21 +910,12 @@ Previous Step (Step ${placeholderStepNum}) Response:
 ${JSON.stringify(referencedStep.response, null, 2)}
 
 What value should replace "resolved_from_step_${placeholderStepNum}"? Return ONLY the value:`,
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 100,
-      }),
-    });
-    
-    if (!llmResponse.ok) {
-      const errorText = await llmResponse.text();
-      console.error('LLM extraction failed:', errorText);
-      return { resolved: false, reason: `LLM extraction failed: ${errorText}` };
-    }
-    
-    const data = await llmResponse.json();
-    const extractedValue = data.choices[0]?.message?.content?.trim();
+        },
+      ],
+      apiKey: apiKey_local,
+      temperature: 0.2,
+      maxTokens: 100,
+    })).trim();
     
     console.log(`✅ LLM extracted value: "${extractedValue}"`);
     
@@ -1066,10 +999,10 @@ export async function POST(request: NextRequest) {
       const pendingData = pendingPlans.get(sessionId)!;
       pendingPlans.delete(sessionId); // Remove from pending
       
-      const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+      const apiKey = process.env.ANTHROPIC_API_KEY;
       if (!apiKey) {
         return NextResponse.json(
-          { error: 'OpenAI API key not configured' },
+          { error: 'Anthropic API key not configured' },
           { status: 500 }
         );
       }
@@ -1151,10 +1084,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
+        { error: 'Anthropic API key not configured' },
         { status: 500 }
       );
     }
@@ -1295,14 +1228,8 @@ export async function POST(request: NextRequest) {
         console.log('📝 Generating LLM response for no tables selected error:', reason);
         
         // Generate a human-friendly response via LLM
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o',
+        try {
+          const llmMessage = await callLLM({
             messages: [
               {
                 role: 'system',
@@ -1311,27 +1238,23 @@ export async function POST(request: NextRequest) {
               {
                 role: 'user',
                 content: `User's question: "${refinedQuery}"
-                
+
 The database schema analysis shows: "${reason}"
 
 Please provide a friendly explanation of why this question cannot be answered with the current database.`
               }
             ],
+            apiKey,
             temperature: 0.7,
-            max_tokens: 512,
-          }),
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          const llmMessage = data.choices[0]?.message?.content || reason;
+            maxTokens: 512,
+          });
           return NextResponse.json({
-            message: llmMessage,
+            message: llmMessage || reason,
             refinedQuery,
             final: true,
             reason: reason
           });
-        } else {
+        } catch {
           // Fallback if LLM call fails
           return NextResponse.json({
             message: reason,
@@ -1597,18 +1520,7 @@ async function validateNeedMoreActions(
   item_not_found?: boolean
 }> {
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: `You are the VALIDATOR.
+    const validatorSystemPrompt = `You are the VALIDATOR.
 
 Your ONLY responsibility is to determine whether
 the ORIGINAL USER GOAL has been fully satisfied.
@@ -1814,11 +1726,14 @@ If you are unsure whether the user goal has been met,
 you MUST respond with needsMoreActions = true.
 
 False negatives are acceptable.
-False positives are NOT.`,
-          },
-          {
-            role: 'user',
-            content: `Original Query: ${originalQuery}
+False positives are NOT.`;
+
+    const content = await callLLM({
+      messages: [
+        { role: 'system', content: validatorSystemPrompt },
+        {
+          role: 'user',
+          content: `Original Query: ${originalQuery}
 
 Last Execution Plan: ${lastExecutionPlan ? JSON.stringify(lastExecutionPlan.execution_plan || lastExecutionPlan, null, 2) : 'No plan available'}
 
@@ -1842,27 +1757,22 @@ IMPORTANT:
 5. DO NOT request count/aggregation endpoints if arrays are already available
 
 Can we answer the original query with the information we have? Or do we need more API calls?`,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 4096,
-      }),
+        },
+      ],
+      apiKey,
+      temperature: 0.3,
+      maxTokens: 4096,
     });
 
-    if (!response.ok) {
-      console.error('Validator API request failed:', await response.text());
-      return { needsMoreActions: false, reason: 'Validation failed, proceeding with available data' };
-    }
+    console.log('Validator Response 1:', content);
 
-    const data = await response.json();
-    console.log('Validator Response 1:', data);
-    const content = data.choices[0]?.message?.content || '';
-
-    // Sanitize and parse the response
+    // Sanitize and parse the response — find the last top-level JSON object
+    // to avoid matching inline JSON snippets in prose text
     const sanitized = content.replace(/```json|```/g, '').trim();
-    const jsonMatch = sanitized.match(/\{[\s\S]*\}/);
+    const jsonCandidates = sanitized.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
+    const jsonMatch = jsonCandidates ? jsonCandidates[jsonCandidates.length - 1] : null;
     if (jsonMatch) {
-      const result = JSON.parse(jsonMatch[0]);
+      const result = JSON.parse(jsonMatch);
       // TODO: The validator needs to extract the needed information from the 
       // API responses if any. So that it can be re-used in later re-run of 
       // the planner/executor
@@ -1969,38 +1879,21 @@ usefulData:  {
 🎯 目标已完成，返回结果
 */
 
-    const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      throw new Error('OpenAI API key not configured');
+      throw new Error('Anthropic API key not configured');
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: prompt,
-          },
-        ],
-        temperature: 0.5,
-        max_tokens: 4096,
-      }),
+    const extractedData = await callLLM({
+      messages: [
+        { role: 'system', content: prompt },
+      ],
+      apiKey,
+      temperature: 0.5,
+      maxTokens: 4096,
     });
 
-    if (!response.ok) {
-      console.error('Useful data extraction API request failed:', await response.text());
-      return existingUsefulData;
-    }
-
-    const data = await response.json();
-    const extractedData = data.choices[0]?.message?.content?.trim() || existingUsefulData;
-    return extractedData;
+    return extractedData.trim() || existingUsefulData;
   } catch (error) {
     console.error('Error extracting useful data:', error);
     return existingUsefulData;
@@ -2052,22 +1945,15 @@ Use the actual data from the API responses to provide specific, accurate informa
       return `I couldn't find the item you're looking for${searchedItem ? ` (${searchedItem})` : ''} in the system. The search returned no results. Please check the spelling or try a different search term.`;
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt + additionalContext,
-          },
-          {
-            role: 'user',
-            content: `Original Question: ${originalQuery}
+    const answer = await callLLM({
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt + additionalContext,
+        },
+        {
+          role: 'user',
+          content: `Original Question: ${originalQuery}
 
 API Response Data:
 ${
@@ -2078,7 +1964,7 @@ ${
       return value;
     }
     return value;
-  }, 2) + 
+  }, 2) +
   (usefulData || '')
 }
 
@@ -2089,20 +1975,14 @@ IMPORTANT: The data above includes complete arrays. Pay careful attention to:
 - Any other detailed attributes
 
 Only state facts that are explicitly present in the data. Do not make assumptions about learning methods or other attributes.`,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 2048,
-      }),
+        },
+      ],
+      apiKey,
+      temperature: 0.7,
+      maxTokens: 2048,
     });
 
-    if (!response.ok) {
-      console.error('Answer generation API request failed:', await response.text());
-      return 'Unable to generate answer from the gathered information.';
-    }
-
-    const data = await response.json();
-    return data.choices[0]?.message?.content || 'Unable to generate answer.';
+    return answer || 'Unable to generate answer.';
   } catch (error) {
     console.error('Error generating final answer:', error);
     return 'Error generating answer from the gathered information.';
@@ -2453,11 +2333,19 @@ async function executeIterativePlanner(
             // Perform the API call for the current step
             let apiResponse;
             try {
-              apiResponse = await dynamicApiRequest(
-                process.env.NEXT_PUBLIC_ELASTICDASH_API || '',
-                apiSchema,
-                userToken // Pass user token for authentication
-              );
+              // Intercept SQL queries — execute locally instead of via remote API
+              const isSqlQuery = apiSchema.path === '/general/sql/query' && apiSchema.method?.toLowerCase() === 'post';
+              if (isSqlQuery && apiSchema.requestBody?.query) {
+                console.log('🔀 Intercepting SQL query — executing locally via runSelectQuery');
+                const rows = await runSelectQuery(apiSchema.requestBody.query);
+                apiResponse = { success: true, result: rows };
+              } else {
+                apiResponse = await dynamicApiRequest(
+                  process.env.NEXT_PUBLIC_ELASTICDASH_API || '',
+                  apiSchema,
+                  userToken // Pass user token for authentication
+                );
+              }
             } catch (err: any) {
               // CRITICAL: Treat errors differently based on intent type
               console.warn(`⚠️  API call encountered an error (statusCode: ${err.statusCode}):`, err.message);
@@ -2557,11 +2445,18 @@ async function executeIterativePlanner(
                 console.log(`  📤 Fan-out 调用 ${fanOutReq.fanOutParam}=${value}`);
                 let singleResult;
                 try {
-                  singleResult = await dynamicApiRequest(
-                    process.env.NEXT_PUBLIC_ELASTICDASH_API || '',
-                    singleValueSchema,
-                    userToken
-                  );
+                  // Intercept SQL queries — execute locally
+                  const isSqlFanOut = singleValueSchema.path === '/general/sql/query' && singleValueSchema.method?.toLowerCase() === 'post';
+                  if (isSqlFanOut && singleValueSchema.requestBody?.query) {
+                    const rows = await runSelectQuery(singleValueSchema.requestBody.query);
+                    singleResult = { success: true, result: rows };
+                  } else {
+                    singleResult = await dynamicApiRequest(
+                      process.env.NEXT_PUBLIC_ELASTICDASH_API || '',
+                      singleValueSchema,
+                      userToken
+                    );
+                  }
                 } catch (err: any) {
                   // 参数类型不匹配是特殊情况，需要重新规划
                   if (typeof err?.message === 'string' && err.message.includes('参数类型不匹配')) {

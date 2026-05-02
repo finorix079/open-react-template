@@ -1,5 +1,6 @@
 import { cosineSimilarity } from "@/src/utils/cosineSimilarity";
 import { SavedTask } from "./taskService";
+import { callLLM, CLAUDE_HAIKU } from "./llmService";
 import fs from 'fs';
 import path from 'path';
 import { RequestContext } from "./chatPlannerService";
@@ -98,30 +99,22 @@ Candidate tasks:
 ${JSON.stringify(shortlist, null, 2)}
 `;
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
+  let content: string;
+  try {
+    content = (await callLLM({
       messages: [
         { role: 'system', content: 'Respond with JSON only. No prose.' },
         { role: 'user', content: prompt },
       ],
+      apiKey,
+      model: CLAUDE_HAIKU,
       temperature: 0.1,
-      max_tokens: 200,
-    }),
-  });
-
-  if (!res.ok) {
-    console.warn('Task similarity LLM failed:', await res.text());
+      maxTokens: 200,
+    })).trim();
+  } catch (err) {
+    console.warn('Task similarity LLM failed:', err);
     return {};
   }
-
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content?.trim() || '';
   try {
     const parsed = JSON.parse(content.replace(/```json|```/g, ''));
     const taskId = parsed.taskId;
@@ -143,13 +136,16 @@ export async function getAllMatchedApis({ entities, intentType, apiKey, context 
   const allMatchedApis = new Map();
   console.log(`🔎 Retrieval mode decision: intentType=${intentType}, always including TABLE/SQL for reads; adding API matches for MODIFY.`);
 
+  // Embeddings require OpenAI API key (Anthropic has no embedding API)
+  const embeddingApiKey = process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
+
   for (const entity of entities) {
     console.log(`\n--- Embedding search for entity: "${entity}" ---`);
     const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${embeddingApiKey}`,
       },
       body: JSON.stringify({
         model: 'text-embedding-ada-002',
