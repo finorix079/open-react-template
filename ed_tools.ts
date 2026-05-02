@@ -62,8 +62,8 @@ try {
 // });
 
 export const apiService = wrapTool('apiService', async (input: any) => {
-    const typedInput = input as { baseUrl: string; schema: any; userToken?: string };
-    return await dynamicApiRequest(typedInput.baseUrl, typedInput.schema, typedInput.userToken);
+    const typedInput = input as { baseUrl: string; schema: any };
+    return await dynamicApiRequest(typedInput.baseUrl, typedInput.schema);
 });
 
 export const queryRefinement = wrapTool('queryRefinement', async (input: any) => {
