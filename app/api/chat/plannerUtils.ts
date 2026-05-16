@@ -6,7 +6,7 @@
 import jaison from '@/utils/jaison';
 import { RequestContext } from '@/services/chatPlannerService';
 import { SavedTask } from '@/services/taskService';
-import { sendToPlanner } from './planner';
+import { sendToPlanner } from '@/ed_tools';
 
 /**
  * Prepares planner inputs, calls sendToPlanner, and returns a parsed actionable plan.
@@ -74,7 +74,7 @@ export async function runPlannerWithInputs({
   }
 
   // Normal path: call the LLM planner
-  let planResponse = await sendToPlanner(refinedQuery, usefulData, conversationContext, intentType);
+  let planResponse = await sendToPlanner({ refinedQuery, usefulData, conversationContext, planIntentType: intentType });
 
   let actionablePlan;
   try {
@@ -107,7 +107,7 @@ export async function runPlannerWithInputs({
     entities.length > 0
   ) {
     console.log('♻️ Plan is resolution-only for MODIFY intent; re-planning with forceFullPlan=true...');
-    const retryResponse = await sendToPlanner(refinedQuery, usefulData, conversationContext, 'MODIFY', true);
+    const retryResponse = await sendToPlanner({ refinedQuery, usefulData, conversationContext, planIntentType: 'MODIFY', forceFullPlan: true });
     const sanitizedRetry = sanitizePlannerResponse(retryResponse);
     actionablePlan = JSON.parse(sanitizedRetry);
     planResponse = retryResponse;
@@ -157,7 +157,7 @@ export function containsPlaceholderReference(obj: any): boolean {
  * Resolves "resolved_from_step_X" placeholders by extracting values from previously
  * executed steps using an LLM call.
  */
-export async function resolvePlaceholders(
+export async function resolvePlaceholdersRaw(
   stepToExecute: any,
   executedSteps: any[],
   apiKey: string
@@ -268,3 +268,4 @@ ${JSON.stringify(referencedStep.response, null, 2)}`,
     return { resolved: false, reason: error.message };
   }
 }
+

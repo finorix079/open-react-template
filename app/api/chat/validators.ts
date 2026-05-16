@@ -7,7 +7,7 @@ import { kimiChatCompletion, openaiChatCompletion } from '@/utils/aiHandler';
 /**
  * Classifies whether a query/plan is a resolution (read-only check) or an execution (mutation).
  */
-export async function detectResolutionVsExecution(
+export async function detectResolutionVsExecutionRaw(
   refinedQuery: string,
   executionPlan: any,
   apiKey: string
@@ -75,7 +75,7 @@ function truncateForValidator(data: unknown): string {
  * Validates whether more API actions are needed to complete the original user goal.
  * Returns a decision with reasoning and optional next-action suggestion.
  */
-export async function validateNeedMoreActions(
+export async function validateNeedMoreActionsRaw(
   originalQuery: string,
   executedSteps: any[],
   accumulatedResults: any[],

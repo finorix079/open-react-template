@@ -69,6 +69,37 @@ export const apiService = wrapTool('apiService', async (input: any) => {
 export const queryRefinement = wrapTool('queryRefinement', async (input: any) => {
     console.log('queryRefinement input:', input);
     const typedInput = input as { userInput: string; userToken?: string };
+
+    // Chaos mode: inject failures when ED_CHAOS_MODE=1
+    if (process.env.ED_CHAOS_MODE === '1' && Math.random() < 0.5) {
+        console.warn('[CHAOS] queryRefinement injecting failure');
+        const chaosType = Math.random();
+        if (chaosType < 0.33) {
+            // Throw an error — simulates query refinement crashing
+            throw new Error('[CHAOS] queryRefinement failed: upstream LLM timeout');
+        } else if (chaosType < 0.66) {
+            // Return garbage — simulates bad parse
+            return {
+                refinedQuery: '',
+                concepts: [],
+                apiNeeds: [],
+                entities: ['INVALID_ENTITY_###'],
+                intentType: 'unknown',
+                referenceTask: null,
+            };
+        } else {
+            // Return wrong intent — simulates misclassification
+            return {
+                refinedQuery: typedInput.userInput,
+                concepts: ['completely_wrong_concept'],
+                apiNeeds: ['/api/nonexistent/endpoint'],
+                entities: [],
+                intentType: 'data_mutation',
+                referenceTask: null,
+            };
+        }
+    }
+
     try {
         const res = await clarifyAndRefineUserInput(typedInput.userInput, typedInput.userToken)
         .catch(error => {
@@ -130,5 +161,101 @@ export const searchBerry = wrapTool('searchBerry', async (input: any) => {
  */
 export const searchAbility = wrapTool('searchAbility', async (input: any) => {
     return await searchAbilityTool(input);
+});
+
+// ─── Pipeline orchestration tools ──────────────────────────────────────────
+// These use dynamic import() to break circular dependencies (the source files
+// transitively import from this module via aiHandler.ts → ed_tools.ts).
+
+export const sendToPlanner = wrapTool('sendToPlanner', async (input: any) => {
+    const { sendToPlannerRaw } = await import('./app/api/chat/planner');
+    const typedInput = input as {
+        refinedQuery: string;
+        usefulData: string;
+        conversationContext?: string;
+        planIntentType?: 'FETCH' | 'MODIFY';
+        forceFullPlan?: boolean;
+    };
+    return sendToPlannerRaw(
+        typedInput.refinedQuery,
+        typedInput.usefulData,
+        typedInput.conversationContext,
+        typedInput.planIntentType,
+        typedInput.forceFullPlan,
+    );
+});
+
+export const detectResolutionVsExecution = wrapTool('detectResolutionVsExecution', async (input: any) => {
+    const { detectResolutionVsExecutionRaw } = await import('./app/api/chat/validators');
+    const typedInput = input as { refinedQuery: string; executionPlan: any; apiKey: string };
+    return detectResolutionVsExecutionRaw(typedInput.refinedQuery, typedInput.executionPlan, typedInput.apiKey);
+});
+
+export const validateNeedMoreActions = wrapTool('validateNeedMoreActions', async (input: any) => {
+    const { validateNeedMoreActionsRaw } = await import('./app/api/chat/validators');
+    const typedInput = input as {
+        originalQuery: string;
+        executedSteps: any[];
+        accumulatedResults: any[];
+        apiKey: string;
+        lastExecutionPlan?: any;
+    };
+    return validateNeedMoreActionsRaw(
+        typedInput.originalQuery,
+        typedInput.executedSteps,
+        typedInput.accumulatedResults,
+        typedInput.apiKey,
+        typedInput.lastExecutionPlan,
+    );
+});
+
+export const summarizeMessage = wrapTool('summarizeMessage', async (input: any) => {
+    const { summarizeMessageRaw } = await import('./app/api/chat/messageUtils');
+    const typedInput = input as { message: any; apiKey: string };
+    return summarizeMessageRaw(typedInput.message, typedInput.apiKey);
+});
+
+export const extractUsefulData = wrapTool('extractUsefulData', async (input: any) => {
+    const { extractUsefulDataFromApiResponsesRaw } = await import('./app/api/chat/executor');
+    const typedInput = input as {
+        refinedQuery: string;
+        finalDeliverable: string;
+        existingUsefulData: string;
+        apiResponse: string;
+        apiSchema?: any;
+        availableApis?: any[];
+    };
+    return extractUsefulDataFromApiResponsesRaw(
+        typedInput.refinedQuery,
+        typedInput.finalDeliverable,
+        typedInput.existingUsefulData,
+        typedInput.apiResponse,
+        typedInput.apiSchema,
+        typedInput.availableApis,
+    );
+});
+
+export const generateFinalAnswer = wrapTool('generateFinalAnswer', async (input: any) => {
+    const { generateFinalAnswerRaw } = await import('./app/api/chat/executor');
+    const typedInput = input as {
+        originalQuery: string;
+        accumulatedResults: any[];
+        apiKey: string;
+        stoppedReason?: string;
+        usefulData?: string;
+    };
+    return generateFinalAnswerRaw(
+        typedInput.originalQuery,
+        typedInput.accumulatedResults,
+        typedInput.apiKey,
+        typedInput.stoppedReason,
+        typedInput.usefulData,
+    );
+});
+
+export const resolvePlaceholders = wrapTool('resolvePlaceholders', async (input: any) => {
+    const { resolvePlaceholdersRaw } = await import('./app/api/chat/plannerUtils');
+    const typedInput = input as { stepToExecute: any; executedSteps: any[]; apiKey: string };
+    return resolvePlaceholdersRaw(typedInput.stepToExecute, typedInput.executedSteps, typedInput.apiKey);
 });
 

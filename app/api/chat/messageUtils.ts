@@ -32,7 +32,7 @@ export function estimateTokens(text: string): number {
  * Summarizes a single message while preserving all critical data points.
  * Short messages and system messages are returned unchanged.
  */
-export async function summarizeMessage(message: Message, apiKey: string): Promise<Message> {
+export async function summarizeMessageRaw(message: Message, apiKey: string): Promise<Message> {
   if (message.content.length < 500 || message.role === 'system') {
     return message;
   }
@@ -167,7 +167,7 @@ export async function summarizeMessages(messages: Message[], apiKey: string): Pr
 
   try {
     const summarizedOldMessages = await Promise.all(
-      oldMessages.map(msg => summarizeMessage(msg, apiKey))
+      oldMessages.map(msg => summarizeMessageRaw(msg, apiKey))
     );
 
     return [

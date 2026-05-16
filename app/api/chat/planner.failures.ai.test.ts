@@ -11,7 +11,7 @@
  * Each failing test includes a comment explaining exactly why it will fail.
  */
 import { expect } from 'elasticdash-test'
-import { sendToPlanner } from './planner'
+import { sendToPlannerRaw as sendToPlanner } from './planner'
 
 /** Shared query used across all tests in this file. */
 const PIKACHU_ATTACK_QUERY = 'Find the attack of pikachu'

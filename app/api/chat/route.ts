@@ -18,20 +18,21 @@ import { pendingPlans, generateSessionId } from './session';
 import {
   serializeUsefulDataInOrder,
   estimateTokens,
-  summarizeMessage,
   summarizeMessages,
   filterPlanMessages,
 } from './messageUtils';
-
-// Validators
-import { detectResolutionVsExecution } from './validators';
 
 // Planner utilities
 import { runPlannerWithInputs } from './plannerUtils';
 
 // Executor
-import { generateFinalAnswer, executeIterativePlanner } from './executor';
-import { queryRefinement } from '@/ed_tools';
+import { executeIterativePlanner } from './executor';
+import {
+  queryRefinement,
+  detectResolutionVsExecution,
+  generateFinalAnswer,
+  summarizeMessage,
+} from '@/ed_tools';
 import { edStartTrace, edEndTrace } from '@/ed_workflows';
 // setHttpRunContext is loaded via dynamic import inside the handler to avoid
 // a static reference to elasticdash-test which cannot be resolved by Turbopack
@@ -366,7 +367,7 @@ async function chatHandler(
               recentMessages.map(async (msg) => {
                 // Only summarize long assistant responses for context
                 if (msg.role === 'assistant' && msg.content.length > 800) {
-                  const summarized = await summarizeMessage(msg, apiKey);
+                  const summarized = await summarizeMessage({ message: msg, apiKey });
                   return summarized;
                 }
                 return msg;
@@ -513,7 +514,7 @@ async function chatHandler(
           }
 
           // Phase 2: Detect if this is a resolution query
-          const queryIntent = await detectResolutionVsExecution(refinedQuery, actionablePlan, apiKey);
+          const queryIntent = await detectResolutionVsExecution({ refinedQuery, executionPlan: actionablePlan, apiKey });
 
           if (queryIntent === 'resolution') {
             console.log('🔄 Resolution query detected! Switching to table-only mode and re-planning...');
@@ -704,13 +705,12 @@ async function chatHandler(
               (Array.isArray(actionablePlan.execution_plan) && actionablePlan.execution_plan.length === 0))
           ) {
             // 直接用usefulData和accumulatedResults生成最终答案
-            const answer = await generateFinalAnswer(
-              refinedQuery,
-              [],
+            const answer = await generateFinalAnswer({
+              originalQuery: refinedQuery,
+              accumulatedResults: [],
               apiKey,
-              undefined,
-              str // usefulData
-            );
+              usefulData: str,
+            });
             output = {
               message: answer,
               refinedQuery,

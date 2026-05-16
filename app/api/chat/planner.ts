@@ -16,7 +16,7 @@ import { openaiChatCompletion, kimiChatCompletion } from '@/utils/aiHandler';
  * Step 2 — retrieve relevant PokéAPI tools (keyword matching, no embedding calls).
  * Step 3 — generate execution plan using the LLM + tool context.
  */
-export async function sendToPlanner(
+export async function sendToPlannerRaw(
   refinedQuery: string,
   usefulData: string,
   conversationContext?: string,

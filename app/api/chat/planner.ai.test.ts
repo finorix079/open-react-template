@@ -1,5 +1,5 @@
 import { expect } from 'elasticdash-test'
-import { sendToPlanner } from './planner'
+import { sendToPlannerRaw as sendToPlanner } from './planner'
 
 aiTest('sendToPlanner calls prompts in the correct order for a FETCH goal', async (ctx) => {
   const refinedQuery = 'Find the attack of pikachu'

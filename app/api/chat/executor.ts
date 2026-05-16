@@ -10,11 +10,16 @@ import { SavedTask } from '@/services/taskService';
 import { getAllMatchedApis, getTopKResults, RequestContext } from '@/services/chatPlannerService';
 import { kimiChatCompletion, openaiChatCompletion, agentTools } from '@/utils/aiHandler';
 import type { LangfuseObservation } from '@langfuse/tracing';
-import { sendToPlanner } from './planner';
-import { sanitizePlannerResponse, containsPlaceholderReference, resolvePlaceholders } from './plannerUtils';
+import { sendToPlanner } from '@/ed_tools';
+import { sanitizePlannerResponse, containsPlaceholderReference } from './plannerUtils';
 import { serializeUsefulDataInOrder } from './messageUtils';
-import { validateNeedMoreActions } from './validators';
-import { apiService } from '@/ed_tools';
+import {
+    apiService,
+    extractUsefulData,
+    generateFinalAnswer,
+    resolvePlaceholders,
+    validateNeedMoreActions,
+} from '@/ed_tools';
 
 /**
  * Derives the agentTools key and typed input from a plan step's API path and parameters,
@@ -71,7 +76,7 @@ function resolvePokeApiTool(
  * Extracts and merges useful data from a single API response into the running useful-data string.
  * Uses Kimi for lightweight extraction.
  */
-export async function extractUsefulDataFromApiResponses(
+export async function extractUsefulDataFromApiResponsesRaw(
   refinedQuery: string,
   finalDeliverable: string,
   existingUsefulData: string,
@@ -169,7 +174,7 @@ Extracted Useful Data: `;
  * Generates a final natural-language answer from accumulated API results.
  * Handles special stop reasons (max_iterations, stuck_state, item_not_found).
  */
-export async function generateFinalAnswer(
+export async function generateFinalAnswerRaw(
   originalQuery: string,
   accumulatedResults: any[],
   apiKey: string,
@@ -578,7 +583,7 @@ export async function executeIterativePlanner(
 
             if (containsPlaceholderReference(stepToCheck)) {
               console.log(`⚠️  Step contains placeholder reference(s), attempting resolution...`);
-              const resolutionResult = await resolvePlaceholders(stepToCheck, executedSteps, apiKey);
+              const resolutionResult = await resolvePlaceholders({ stepToExecute: stepToCheck, executedSteps, apiKey });
 
               if (!resolutionResult.resolved) {
                 console.error(`❌ CRITICAL: Failed to resolve placeholder - ${resolutionResult.reason}`);
@@ -750,14 +755,14 @@ export async function executeIterativePlanner(
 
             const sanitizedResponse = sanitizeForSerialization(apiResponse);
 
-            const newUsefulData = await extractUsefulDataFromApiResponses(
+            const newUsefulData = await extractUsefulData({
               refinedQuery,
               finalDeliverable,
-              prevUsefulData,
-              JSON.stringify(sanitizedResponse),
+              existingUsefulData: prevUsefulData,
+              apiResponse: JSON.stringify(sanitizedResponse),
               apiSchema,
-              matchedApis
-            );
+              availableApis: matchedApis,
+            });
 
             flatUsefulDataMap.set(apiCallKey, newUsefulData);
 
@@ -827,13 +832,13 @@ export async function executeIterativePlanner(
         const topKResults = await getTopKResults(allMatchedApis, 20);
         const str = serializeUsefulDataInOrder(requestContext);
 
-        const validationResult = await validateNeedMoreActions(
-          refinedQuery,
-          sanitizeForValidation(executedSteps),
-          sanitizeForValidation(accumulatedResults),
+        const validationResult = await validateNeedMoreActions({
+          originalQuery: refinedQuery,
+          executedSteps: sanitizeForValidation(executedSteps),
+          accumulatedResults: sanitizeForValidation(accumulatedResults),
           apiKey,
-          actionablePlan
-        );
+          lastExecutionPlan: actionablePlan,
+        });
 
         console.log('Post-execution validation result:', validationResult);
 
@@ -872,7 +877,7 @@ Reference task (reuse if similar): ${referenceTask ? JSON.stringify({ id: refere
 
 Please generate a NEW PLAN to complete the user's goal.`;
 
-          currentPlanResponse = await sendToPlanner(plannerContext, str, conversationContextWithReference, intentType);
+          currentPlanResponse = await sendToPlanner({ refinedQuery: plannerContext, usefulData: str, conversationContext: conversationContextWithReference, planIntentType: intentType });
           actionablePlan = JSON.parse(sanitizePlannerResponse(currentPlanResponse));
           console.log('✅ Generated new plan from validation feedback (MODIFY re-plan)');
           continue;
@@ -906,7 +911,7 @@ Reference task (reuse if similar): ${referenceTask ? JSON.stringify({ id: refere
 
 Please generate a NEW PLAN that avoids the failed action and finds an alternative approach.`;
 
-        currentPlanResponse = await sendToPlanner(plannerContext, str, conversationContextWithReference, intentType);
+        currentPlanResponse = await sendToPlanner({ refinedQuery: plannerContext, usefulData: str, conversationContext: conversationContextWithReference, planIntentType: intentType });
         actionablePlan = JSON.parse(sanitizePlannerResponse(currentPlanResponse));
         console.log('✅ Generated new plan after error (MODIFY recovery)');
         continue;
@@ -936,13 +941,13 @@ Please generate a NEW PLAN that avoids the failed action and finds an alternativ
 
         console.log('\n🔍 FETCH flow: Validating if more actions are needed...');
 
-        const validationResult = await validateNeedMoreActions(
-          refinedQuery,
-          sanitizeForValidation(executedSteps),
-          sanitizeForValidation(accumulatedResults),
+        const validationResult = await validateNeedMoreActions({
+          originalQuery: refinedQuery,
+          executedSteps: sanitizeForValidation(executedSteps),
+          accumulatedResults: sanitizeForValidation(accumulatedResults),
           apiKey,
-          actionablePlan
-        );
+          lastExecutionPlan: actionablePlan,
+        });
 
         console.log('Validation result:', validationResult);
 
@@ -985,7 +990,7 @@ IMPORTANT: If the available APIs do not include an endpoint that can provide the
 
 Please generate the next step in the plan, or indicate that no more steps are needed.`;
 
-        currentPlanResponse = await sendToPlanner(plannerContext, str, conversationContextWithReference, intentType);
+        currentPlanResponse = await sendToPlanner({ refinedQuery: plannerContext, usefulData: str, conversationContext: conversationContextWithReference, planIntentType: intentType });
         actionablePlan = JSON.parse(sanitizePlannerResponse(currentPlanResponse));
         console.log('\n🔄 Generated new plan from validator feedback (FETCH mode)');
       }
@@ -1092,13 +1097,13 @@ Please generate the next step in the plan, or indicate that no more steps are ne
 
   const str = serializeUsefulDataInOrder(requestContext);
 
-  const finalAnswer = await generateFinalAnswer(
-    refinedQuery,
-    preparedResults,
+  const finalAnswer = await generateFinalAnswer({
+    originalQuery: refinedQuery,
+    accumulatedResults: preparedResults,
     apiKey,
     stoppedReason,
-    str
-  );
+    usefulData: str,
+  });
 
   console.log('\n' + '='.repeat(80));
   console.log('✅ ITERATIVE PLANNER COMPLETED');

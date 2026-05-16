@@ -28,11 +28,10 @@ import { createSession, setApprovalStatus } from '@/services/conversationDb';
 import {
   serializeUsefulDataInOrder,
   estimateTokens,
-  summarizeMessage,
   summarizeMessages,
   filterPlanMessages,
 } from '../chat/messageUtils';
-import { detectResolutionVsExecution } from '../chat/validators';
+import { detectResolutionVsExecution, summarizeMessage } from '@/ed_tools';
 import { runPlannerWithInputs } from '../chat/plannerUtils';
 import { executeIterativePlanner } from '../chat/executor';
 import { queryRefinement } from '@/ed_tools';
@@ -360,7 +359,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             const contextMessages = await Promise.all(
               recentMessages.map(async (msg) => {
                 if (msg.role === 'assistant' && msg.content.length > 800) {
-                  return summarizeMessage(msg, apiKey);
+                  return summarizeMessage({ message: msg, apiKey });
                 }
                 return msg;
               }),
@@ -453,7 +452,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           }
 
           // --- Resolution vs execution detection ---
-          const queryIntent = await detectResolutionVsExecution(refinedQuery, actionablePlan, apiKey);
+          const queryIntent = await detectResolutionVsExecution({ refinedQuery, executionPlan: actionablePlan, apiKey });
 
           if (queryIntent === 'resolution') {
             const tableOnlyResults = topKResults.filter(
