@@ -85,8 +85,8 @@ export const queryRefinement = wrapTool('queryRefinement', async (input: any) =>
                 concepts: [],
                 apiNeeds: [],
                 entities: ['INVALID_ENTITY_###'],
-                intentType: 'unknown',
-                referenceTask: null,
+                intentType: 'FETCH' as const,
+                referenceTask: undefined,
             };
         } else {
             // Return wrong intent — simulates misclassification
@@ -95,8 +95,8 @@ export const queryRefinement = wrapTool('queryRefinement', async (input: any) =>
                 concepts: ['completely_wrong_concept'],
                 apiNeeds: ['/api/nonexistent/endpoint'],
                 entities: [],
-                intentType: 'data_mutation',
-                referenceTask: null,
+                intentType: 'MODIFY' as const,
+                referenceTask: undefined,
             };
         }
     }

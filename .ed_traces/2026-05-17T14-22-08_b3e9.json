@@ -1,0 +1,227 @@
+{
+  "trace_id": "2026-05-17T14-22-08_b3e9",
+  "created_at": "2026-05-17T14:22:08.102Z",
+  "sdk_version": "0.1.24",
+  "workflow": {
+    "name": "chatStreamHandler",
+    "input": null,
+    "output": null
+  },
+  "steps": [
+    {
+      "step_id": "ai_call_0",
+      "type": "ai_call",
+      "name": "claude-sonnet-4-6",
+      "input": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an expert that refines user queries and identifies what needs to be investigated to answer them..."
+          },
+          {
+            "role": "user",
+            "content": "HISTORICAL CONTEXT (for reference only):\nassistant: Pikachu has a speed stat of **90**.\n\n---\n\n**Steps taken:**\n\n1. **Fetch full details for Pikachu to retrieve its speed stat**\n   `GET /pokemon/pikachu`\n\n========================================\nCURRENT QUERY (PRIMARY FOCUS):\nAnd what about Raichu?"
+          }
+        ],
+        "temperature": 0.5,
+        "max_tokens": 4096,
+        "llmRequest": {
+          "model": "claude-sonnet-4-6",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an expert that refines user queries..."
+            },
+            {
+              "role": "user",
+              "content": "HISTORICAL CONTEXT (for reference only):\nassistant: Pikachu has a speed stat of **90**..."
+            }
+          ],
+          "temperature": 0.5,
+          "max_tokens": 4096
+        },
+        "promptSnippet": "HISTORICAL CONTEXT (for reference only):\nassistant: Pikachu has a speed stat of **90**..."
+      },
+      "output": "Refined Query: \"What is the speed stat of Raichu?\"\nLanguage: en\nConcepts: [\"Raichu\", \"speed stat\"]\nAPI Needs: [\"GET pokemon details\"]\nEntities: [\"Raichu details\"]\nIntentType: \"FETCH\"",
+      "started_at": "2026-05-17T14:22:08.102Z",
+      "ended_at": "2026-05-17T14:22:08.934Z",
+      "duration_ms": 832,
+      "tokens": {
+        "input": 1720,
+        "output": 48,
+        "total": 1768
+      }
+    },
+    {
+      "step_id": "tool_call_0",
+      "type": "tool_call",
+      "name": "queryRefinement",
+      "input": {
+        "userInput": "Previous context:\nassistant: Pikachu has a speed stat of **90**.\n\n---\n\n**Steps taken:**\n\n1. **Fetch full details for Pikachu to retrieve its speed stat**\n   `GET /pokemon/pikachu`\n\nCurrent query: And what about Raichu?",
+        "userToken": ""
+      },
+      "output": {
+        "refinedQuery": "\"What is the speed stat of Raichu?\"",
+        "language": "en",
+        "concepts": [
+          "Raichu",
+          "speed stat"
+        ],
+        "apiNeeds": [
+          "GET pokemon details"
+        ],
+        "entities": [
+          "Raichu details"
+        ],
+        "intentType": "FETCH"
+      },
+      "started_at": "2026-05-17T14:22:08.102Z",
+      "ended_at": "2026-05-17T14:22:08.934Z",
+      "duration_ms": 832,
+      "tokens": null
+    },
+    {
+      "step_id": "ai_call_1",
+      "type": "ai_call",
+      "name": "claude-sonnet-4-6",
+      "input": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an expert that refines user queries..."
+          },
+          {
+            "role": "user",
+            "content": "\"What is the speed stat of Raichu?\""
+          }
+        ],
+        "temperature": 0.5,
+        "max_tokens": 4096,
+        "llmRequest": {
+          "model": "claude-sonnet-4-6",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an expert that refines user queries..."
+            },
+            {
+              "role": "user",
+              "content": "\"What is the speed stat of Raichu?\""
+            }
+          ],
+          "temperature": 0.5,
+          "max_tokens": 4096
+        },
+        "promptSnippet": "\"What is the speed stat of Raichu?\""
+      },
+      "output": "Refined Query: \"What is the speed stat of Raichu?\"\nLanguage: en\nConcepts: [\"Raichu\", \"speed stat\"]\nAPI Needs: [\"GET pokemon details\"]\nEntities: [\"Raichu details\"]\nIntentType: \"FETCH\"",
+      "started_at": "2026-05-17T14:22:08.937Z",
+      "ended_at": "2026-05-17T14:22:09.412Z",
+      "duration_ms": 475,
+      "tokens": {
+        "input": 1690,
+        "output": 45,
+        "total": 1735
+      }
+    },
+    {
+      "step_id": "ai_call_2",
+      "type": "ai_call",
+      "name": "claude-sonnet-4-6",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "You are a Goal Completion Validator for a Pokémon data assistant.\n\nDetermine whether the user's goal has already been satisfied by the existing data.\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCONVERSATION HISTORY:\nassistant: Pikachu has a speed stat of **90**.\n\n---\n\n**Steps taken:**\n\n1. **Fetch full details for Pikachu to retrieve its speed stat**\n   `GET /pokemon/pikachu`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nUser Goal: \"What is the speed stat of Raichu?\"\n\nExisting Data (from previous PokéAPI calls):\nPikachu — speed: 90, hp: 35, attack: 55, defense: 40, specialAttack: 50, specialDefense: 50. Types: electric. Abilities: static, lightning-rod.\n\nRules:\n1. \"Existing Data\" is the only trustworthy source of facts.\n2. If the existing data clearly and fully answers the user goal → GOAL_COMPLETED\n3. If the existing data is empty or does not fully answer → GOAL_NOT_COMPLETED\n\nOutput ONLY one of: GOAL_COMPLETED or GOAL_NOT_COMPLETED"
+          }
+        ],
+        "temperature": 0.0,
+        "max_tokens": 32,
+        "llmRequest": {
+          "model": "claude-sonnet-4-6",
+          "messages": [
+            {
+              "role": "user",
+              "content": "You are a Goal Completion Validator..."
+            }
+          ],
+          "temperature": 0.0,
+          "max_tokens": 32
+        },
+        "promptSnippet": "You are a Goal Completion Validator for a Pokémon data assistant..."
+      },
+      "output": "GOAL_COMPLETED",
+      "started_at": "2026-05-17T14:22:09.415Z",
+      "ended_at": "2026-05-17T14:22:09.983Z",
+      "duration_ms": 568,
+      "tokens": {
+        "input": 245,
+        "output": 4,
+        "total": 249
+      }
+    },
+    {
+      "step_id": "tool_call_1",
+      "type": "tool_call",
+      "name": "sendToPlanner",
+      "input": {
+        "refinedQuery": "\"What is the speed stat of Raichu?\"",
+        "usefulData": "Pikachu — speed: 90, hp: 35, attack: 55, defense: 40, specialAttack: 50, specialDefense: 50. Types: electric. Abilities: static, lightning-rod.",
+        "conversationContext": "assistant: Pikachu has a speed stat of **90**.\n\n---\n\n**Steps taken:**\n\n1. **Fetch full details for Pikachu to retrieve its speed stat**\n   `GET /pokemon/pikachu`",
+        "planIntentType": "FETCH"
+      },
+      "output": "{\"needs_clarification\":false,\"execution_plan\":[],\"message\":\"Goal completed with existing data\"}",
+      "started_at": "2026-05-17T14:22:09.415Z",
+      "ended_at": "2026-05-17T14:22:09.986Z",
+      "duration_ms": 571,
+      "tokens": null
+    },
+    {
+      "step_id": "ai_call_3",
+      "type": "ai_call",
+      "name": "claude-sonnet-4-6",
+      "input": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a helpful Pokémon data assistant. The user asked a question and the system has already gathered the answer. Present this pre-computed answer in a natural, conversational way.\n\nPre-computed answer:\nBased on existing data, Raichu has a speed stat of 90."
+          },
+          {
+            "role": "user",
+            "content": "And what about Raichu?"
+          }
+        ],
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "llmRequest": {
+          "model": "claude-sonnet-4-6",
+          "messages": [
+            {
+              "role": "user",
+              "content": "And what about Raichu?"
+            }
+          ],
+          "system": [
+            {
+              "type": "text",
+              "text": "You are a helpful Pokémon data assistant. The user asked a question and the system has already gathered the answer. Present this pre-computed answer in a natural, conversational way.\n\nPre-computed answer:\nBased on existing data, Raichu has a speed stat of 90."
+            }
+          ],
+          "temperature": 0.7,
+          "max_tokens": 4096,
+          "stream": true
+        },
+        "promptSnippet": "And what about Raichu?"
+      },
+      "output": "Raichu has a speed stat of **90** — the same as its pre-evolution Pikachu!\n\n---\n\n**Steps taken:**\n\n1. **Retrieved from existing data** (no additional API call needed)",
+      "started_at": "2026-05-17T14:22:09.989Z",
+      "ended_at": "2026-05-17T14:22:10.876Z",
+      "duration_ms": 887,
+      "tokens": {
+        "input": 98,
+        "output": 52,
+        "total": 150
+      }
+    }
+  ]
+}

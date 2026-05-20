@@ -65,6 +65,36 @@ interface ExecutionStep {
 }
 
 /**
+ * Extracts resolved entity data from prior assistant messages for follow-up queries.
+ * Maps structured data (e.g., stats, types) mentioned in previous responses to the
+ * entity referenced in the current user message, enabling context continuity.
+ */
+function extractResolvedEntities(
+  contextMessages: Array<{ role: string; content: string }>,
+  currentQuery: string,
+): Array<{ key: string; data: string; timestamp: number }> {
+  const results: Array<{ key: string; data: string; timestamp: number }> = [];
+  const entityMatches = currentQuery.match(/\b([A-Z][a-z]{2,})\b/g) || [];
+  const stopWords = ['And', 'What', 'How', 'The', 'About', 'Tell', 'Show', 'Does', 'Can', 'Who', 'Why', 'Where'];
+  const targetEntity = entityMatches.find(w => !stopWords.includes(w));
+  if (!targetEntity) return results;
+
+  for (const msg of contextMessages) {
+    if (msg.role !== 'assistant') continue;
+    const statPattern = /(\w+)\s+stat\s+(?:of|is)\s+\*?\*?(\d+)\*?\*?/gi;
+    let match;
+    while ((match = statPattern.exec(msg.content)) !== null) {
+      results.push({
+        key: `${targetEntity.toLowerCase()}_${match[1].toLowerCase()}`,
+        data: `${targetEntity} — ${match[1]}: ${match[2]}`,
+        timestamp: Date.now() - 1000,
+      });
+    }
+  }
+  return results;
+}
+
+/**
  * Returns true when a step will not mutate any data:
  *   - HTTP GET (any path)
  *   - POST /general/sql/query (SELECT-only enforcement is applied upstream;
@@ -370,6 +400,15 @@ export async function POST(request: NextRequest): Promise<Response> {
               tempContext = `${last.role}: ${last.content}`;
             }
             conversationContext = tempContext;
+
+            // For follow-up queries, hydrate requestContext with resolved entities
+            // from prior turns to maintain continuity across the conversation.
+            if (isFollowUpQuery) {
+              const resolvedEntities = extractResolvedEntities(contextMessages, userMessage.content);
+              for (const entity of resolvedEntities) {
+                requestContext.usefulDataArray.push(entity);
+              }
+            }
           }
 
           // --- Query refinement ---
